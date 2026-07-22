@@ -145,18 +145,29 @@ class LengthBucketBatches:
     skip the first k batches and replay the identical stream.
     """
 
-    def __init__(self, lengths: np.ndarray, indices: np.ndarray, tokens_per_batch: int, seed: int):
+    def __init__(
+        self,
+        lengths: np.ndarray,
+        indices: np.ndarray,
+        tokens_per_batch: int,
+        seed: int,
+        pad_multiple: int = 64,
+        max_len: int = 512,
+    ):
         self.seed = seed
+        # cost must use the length collate will actually pad to, or batches of
+        # short sequences blow past the token budget by up to pad_multiple x
+        eff = np.minimum(max_len, ((lengths + pad_multiple - 1) // pad_multiple) * pad_multiple)
         order = indices[np.argsort(lengths[indices], kind="stable")]
         self.batches: list[np.ndarray] = []
         cur: list[int] = []
         cur_max = 0
         for i in order:
-            new_max = max(cur_max, int(lengths[i]))
+            new_max = max(cur_max, int(eff[i]))
             if cur and new_max * (len(cur) + 1) > tokens_per_batch:
                 self.batches.append(np.asarray(cur))
                 cur, cur_max = [], 0
-                new_max = int(lengths[i])
+                new_max = int(eff[i])
             cur.append(int(i))
             cur_max = new_max
         if cur:

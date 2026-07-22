@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 import torch
+import torch._dynamo
 import torch.nn.functional as F
 
 from claimsfm.model.encoder import ClaimsEncoder, EncoderConfig
@@ -143,11 +144,11 @@ def train(
 
     model = ClaimsEncoder(EncoderConfig.from_dict(vocab_size, cfg["model"])).to(device)
     log.info("model params: %.2fM", model.num_params() / 1e6)
-    if device.type == "cuda":
-        try:
-            model = torch.compile(model)
-        except Exception as e:  # compile is an optimization, never a requirement
-            log.warning("torch.compile unavailable: %s", e)
+    if device.type == "cuda" and os.environ.get("CLAIMSFM_COMPILE") == "1":
+        # opt-in only: on hosts with a broken inductor toolchain, per-shape
+        # compile retries stall training far worse than eager ever could
+        torch._dynamo.config.suppress_errors = True
+        model = torch.compile(model)
 
     opt = torch.optim.AdamW(
         model.parameters(), lr=cfg["optim"]["peak_lr"],
