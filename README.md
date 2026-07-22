@@ -26,8 +26,8 @@ are committed in `configs/data.lock.yaml`.
 
 ## Status
 
-- [x] M0 — scaffold & data
-- [ ] M1 — ETL, vocabulary, tokenizer
+- [x] M0 — scaffold & data (7 samples downloaded + checksummed, EDA notebook)
+- [x] M1 — ETL, vocabulary, tokenizer (28k-token vocab; Kaggle dx overlap gate **passed at 99.9%**; leakage tests green)
 - [ ] M2 — baselines (LR + XGBoost, both tasks)
 - [ ] M3 — pretraining
 - [ ] M4 — Task A fine-tune & eval
