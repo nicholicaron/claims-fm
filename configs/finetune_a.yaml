@@ -1,0 +1,37 @@
+# M4 Task A fine-tuning. Three modes x two labels; selection on val AUPRC;
+# test probabilities are emitted but only examined by the local eval script.
+
+seed: 20260721
+
+data:
+  pack_dir: data/processed/task_a_pack
+  max_len: 512
+
+model:                        # must match the pretrained encoder exactly
+  d_model: 320
+  n_layers: 6
+  n_heads: 8
+  d_ff: 1280
+  dropout: 0.1
+  max_positions: 512
+  n_claim_types: 4
+  n_ages: 112
+  n_months: 37
+
+modes:
+  probe:   { head_lr: 1.0e-3, encoder_lr: 0.0 }     # frozen pretrained encoder
+  full:    { head_lr: 1.0e-3, encoder_lr: 3.0e-5 }  # pretrained, discriminative LRs
+  scratch: { head_lr: 1.0e-3, encoder_lr: 3.0e-4 }  # same arch/budget, fresh init
+
+labels: [label_ip, label_cost]
+
+train:
+  tokens_per_batch: 16384
+  max_epochs: 5
+  patience: 2                 # evals (per epoch) without val-AUPRC improvement
+  head_dropout: 0.1
+  grad_clip: 1.0
+  log_every_steps: 100
+
+checkpoint: data/checkpoints/pretrain/best.pt
+out_dir: data/finetune/task_a

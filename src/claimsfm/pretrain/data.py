@@ -33,28 +33,12 @@ STUDY_START = dt.date(2008, 1, 1)
 ARRAYS = ["input_ids", "claim_type_ids", "age_years", "month_idx", "visit_ids"]
 
 
-def pretokenize(
-    sequences_path: Path,
-    vocab_path: Path,
-    out_dir: Path,
-    max_len: int,
-    val_frac: float,
-    seed: int,
-    limit_members: int | None = None,
-) -> dict:
-    """sequences parquet + vocab -> packed arrays. Pure numpy per member row."""
-    with open(vocab_path) as f:
-        vocab = json.load(f)
-    tok2id = vocab["tokens"]
-
-    df = pl.read_parquet(sequences_path)
-    if limit_members:
-        df = df.head(limit_members)
-
+def pack_frame(df: pl.DataFrame, tok2id: dict[str, int], out_dir: Path, max_len: int) -> dict:
+    """Encode a sequences frame (tokens/dates/claim_types/visit_ids/birth_year
+    columns) into the packed array files. Members with no events pack as a
+    lone [CLS] — real cohort members with empty observation history."""
     cols = {name: [] for name in ARRAYS}
     offsets = [0]
-    splits = []
-    salt = str(seed).encode()
 
     for row in df.iter_rows(named=True):
         ids = [CLS_ID]
@@ -65,7 +49,7 @@ def pretokenize(
         prev_visit = None
         birth_year = row["birth_year"] or 1935
         for tok, date, ctype, visit in zip(
-            row["tokens"], row["dates"], row["claim_types"], row["visit_ids"]
+            row["tokens"] or [], row["dates"] or [], row["claim_types"] or [], row["visit_ids"] or []
         ):
             age = min(max(date.year - birth_year, 0), 110)
             month = max(0, (date.year - STUDY_START.year) * 12 + date.month - 1)
@@ -94,20 +78,44 @@ def pretokenize(
         cols["month_idx"].append(np.asarray(months, dtype=np.uint8))
         cols["visit_ids"].append(np.asarray(visits, dtype=np.uint16))
         offsets.append(offsets[-1] + len(ids))
-        h = hashlib.sha256(salt + row["DESYNPUF_ID"].encode()).digest()[0] / 255
-        splits.append(1 if h < val_frac else 0)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     for name in ARRAYS:
         np.save(out_dir / f"{name}.npy", np.concatenate(cols[name]))
     np.save(out_dir / "offsets.npy", np.asarray(offsets, dtype=np.uint64))
+    return {"n_members": len(df), "n_positions": offsets[-1], "max_len": max_len}
+
+
+def pretokenize(
+    sequences_path: Path,
+    vocab_path: Path,
+    out_dir: Path,
+    max_len: int,
+    val_frac: float,
+    seed: int,
+    limit_members: int | None = None,
+) -> dict:
+    """sequences parquet + vocab -> packed arrays with a hash-based val split."""
+    with open(vocab_path) as f:
+        vocab = json.load(f)
+    tok2id = vocab["tokens"]
+
+    df = pl.read_parquet(sequences_path)
+    if limit_members:
+        df = df.head(limit_members)
+
+    stats = pack_frame(df, tok2id, out_dir, max_len)
+
+    salt = str(seed).encode()
+    splits = [
+        1 if hashlib.sha256(salt + mid.encode()).digest()[0] / 255 < val_frac else 0
+        for mid in df["DESYNPUF_ID"]
+    ]
     np.save(out_dir / "split.npy", np.asarray(splits, dtype=np.uint8))
 
     meta = {
-        "n_members": len(splits),
+        **stats,
         "n_val_members": int(sum(splits)),
-        "n_positions": offsets[-1],
-        "max_len": max_len,
         "val_frac": val_frac,
         "seed": seed,
         "vocab_size": len(tok2id),
@@ -115,7 +123,7 @@ def pretokenize(
         "source": str(sequences_path),
     }
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=1))
-    log.info("pack: %s members, %s positions -> %s", len(splits), offsets[-1], out_dir)
+    log.info("pack: %s members, %s positions -> %s", meta["n_members"], meta["n_positions"], out_dir)
     return meta
 
 
@@ -129,7 +137,7 @@ class Pack:
         self.lengths = np.diff(self.offsets).astype(np.int64)
 
     def indices(self, split: str) -> np.ndarray:
-        want = 0 if split == "train" else 1
+        want = {"train": 0, "val": 1, "test": 2}[split]
         return np.flatnonzero(self.split == want)
 
     def member(self, i: int) -> dict[str, np.ndarray]:
