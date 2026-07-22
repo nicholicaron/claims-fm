@@ -1,0 +1,72 @@
+# Data manifest. URL patterns verified with live HTTP requests on 2026-07-21;
+# the downloader re-verifies (HEAD) and tries candidates in order, recording
+# which one served each file in configs/data.lock.yaml.
+
+paths:
+  raw: data/raw
+  interim: data/interim
+  processed: data/processed
+
+synpuf:
+  hosts:
+    primary: https://www.cms.gov/research-statistics-data-and-systems/downloadable-public-use-files/synpufs/downloads
+    alternate: https://www.cms.gov/research-statistics-data-and-systems/statistics-trends-and-reports/synpufs/downloads
+    downloads: https://downloads.cms.gov/files
+
+  # CMS scatters these across hosts/paths and their portal pages contain broken
+  # links; candidates are tried in order per file.
+  url_candidates:
+    beneficiary_2008:
+      - "{primary}/de1_0_2008_beneficiary_summary_file_sample_{n}.zip"
+      - "{alternate}/de1_0_2008_beneficiary_summary_file_sample_{n}.zip"
+    beneficiary_2009:
+      - "{primary}/de1_0_2009_beneficiary_summary_file_sample_{n}.zip"
+      - "{alternate}/de1_0_2009_beneficiary_summary_file_sample_{n}.zip"
+    beneficiary_2010:
+      - "{primary}/de1_0_2010_beneficiary_summary_file_sample_{n}.zip"
+      - "{alternate}/de1_0_2010_beneficiary_summary_file_sample_{n}.zip"
+    inpatient:
+      - "{primary}/de1_0_2008_to_2010_inpatient_claims_sample_{n}.zip"
+      - "{alternate}/de1_0_2008_to_2010_inpatient_claims_sample_{n}.zip"
+      - "{downloads}/DE1_0_2008_to_2010_Inpatient_Claims_Sample_{n}.zip"
+    outpatient:
+      - "{primary}/de1_0_2008_to_2010_outpatient_claims_sample_{n}.zip"
+      - "{alternate}/de1_0_2008_to_2010_outpatient_claims_sample_{n}.zip"
+      - "{downloads}/DE1_0_2008_to_2010_Outpatient_Claims_Sample_{n}.zip"
+    pde:
+      - "{downloads}/DE1_0_2008_to_2010_Prescription_Drug_Events_Sample_{n}.zip"
+      - "{primary}/de1_0_2008_to_2010_prescription_drug_events_sample_{n}.zip"
+
+  # Sample 1's 2010 beneficiary file 404s on every live CMS path (the portal's
+  # own sample-1 page mislinks sample 20's file). These are Wayback captures of
+  # the original URL; authenticity is checked post-download (see verify.py).
+  overrides:
+    "1:beneficiary_2010":
+      - "https://web.archive.org/web/20141219132014if_/http://www.cms.gov/Research-Statistics-Data-and-Systems/Downloadable-Public-Use-Files/SynPUFs/Downloads/DE1_0_2010_Beneficiary_Summary_File_Sample_1.zip"
+      - "https://web.archive.org/web/20140613033917if_/http://www.cms.gov/Research-Statistics-Data-and-Systems/Downloadable-Public-Use-Files/SynPUFs/Downloads/DE1_0_2010_Beneficiary_Summary_File_Sample_1.zip"
+
+  # Samples 1-2 are reserved for Task A fine-tune/eval and must never enter the
+  # pretraining corpus or vocabulary (SPEC §3 clean-split rule).
+  samples:
+    "1": eval_only
+    "2": eval_only
+    "3": pretrain
+    "4": pretrain
+    "5": pretrain
+    "6": pretrain
+    "7": pretrain
+
+  # Carrier claims deferred per SPEC §7 M1 / §10 (largest files); revisit only
+  # if ahead of schedule.
+  file_types: [beneficiary_2008, beneficiary_2009, beneficiary_2010, inpatient, outpatient, pde]
+
+kaggle:
+  dataset: rohitrox/healthcare-provider-fraud-detection-analysis
+  dest: data/raw/kaggle_fraud
+
+etl:
+  min_event_year: 2008
+  max_event_year: 2010
+  vocab_min_count: 10          # selected from the 5/10/25 sweep, see DATA.md
+  vocab_min_count_sweep: [5, 10, 25]
+  vocab_source_roles: [pretrain]
