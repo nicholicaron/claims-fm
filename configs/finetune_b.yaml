@@ -1,0 +1,40 @@
+# M5 Task B fine-tuning: provider fraud transfer + label-efficiency curve.
+# Provider = one sequence of its claims (claim = [VISIT] span); [CLS] pooled.
+
+seed: 20260721
+
+data:
+  pack_dir: data/processed/task_b_pack
+  max_len: 512
+
+model:                        # must match the pretrained encoder exactly
+  d_model: 320
+  n_layers: 6
+  n_heads: 8
+  d_ff: 1280
+  dropout: 0.1
+  max_positions: 512
+  n_claim_types: 4
+  n_ages: 112
+  n_months: 37
+
+modes:
+  full:    { head_lr: 1.0e-3, encoder_lr: 3.0e-5 }
+  scratch: { head_lr: 1.0e-3, encoder_lr: 3.0e-4 }
+
+labels: [label]
+
+label_efficiency:
+  fracs: [0.10, 0.25]
+  seeds: 3                    # repeats per sub-100% fraction
+
+train:
+  tokens_per_batch: 16384
+  max_epochs: 8               # tiny dataset (3.8k providers); early stop guards
+  patience: 2
+  head_dropout: 0.1
+  grad_clip: 1.0
+  log_every_steps: 50
+
+checkpoint: data/checkpoints/pretrain/best.pt
+out_dir: data/finetune/task_b

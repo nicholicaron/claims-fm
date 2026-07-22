@@ -38,8 +38,26 @@ def score_split(model, pack, indices, device, tokens_per_batch, seed) -> np.ndar
     return probs[indices]
 
 
+def stratified_subsample(idx: np.ndarray, y: np.ndarray, frac: float, seed: int) -> np.ndarray:
+    """Label-efficiency helper: stratified fraction of the given indices."""
+    rng = np.random.default_rng(seed)
+    keep = []
+    for cls in (0, 1):
+        cls_idx = idx[y[idx] == cls]
+        rng.shuffle(cls_idx)
+        keep.append(cls_idx[: max(1, int(round(frac * len(cls_idx))))])
+    return np.sort(np.concatenate(keep))
+
+
 def run_finetune(
-    cfg: dict, mode: str, label: str, repo_root: Path, device: torch.device | None = None
+    cfg: dict,
+    mode: str,
+    label: str,
+    repo_root: Path,
+    device: torch.device | None = None,
+    train_frac: float = 1.0,
+    frac_seed: int = 0,
+    run_name: str | None = None,
 ) -> Path:
     torch.manual_seed(cfg["seed"])
     device = device or (
@@ -56,6 +74,11 @@ def run_finetune(
     tr_idx = pack.indices("train")
     va_idx = pack.indices("val")
     te_idx = pack.indices("test")
+    if train_frac < 1.0:
+        tr_idx = stratified_subsample(tr_idx, y.astype(np.int8), train_frac, frac_seed)
+        log.info("label-efficiency: training on %d providers (frac %.2f, seed %d)",
+                 len(tr_idx), train_frac, frac_seed)
+    run_name = run_name or f"{mode}_{label}"
 
     model = build_model(
         mode, cfg["model"], pack.meta["vocab_size"],
@@ -103,16 +126,18 @@ def run_finetune(
     out_dir = repo_root / cfg["out_dir"]
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    id_col = sidecar.columns[0]  # DESYNPUF_ID (task A) or Provider (task B)
     for split_name, idx in (("val", va_idx), ("test", te_idx)):
         p = score_split(model, pack, idx, device, tpb, cfg["seed"])
         pl.DataFrame(
-            {"DESYNPUF_ID": sidecar["DESYNPUF_ID"].gather(idx), "p": p}
-        ).write_parquet(out_dir / f"{mode}_{label}_{split_name}.parquet")
+            {id_col: sidecar[id_col].gather(idx), "p": p}
+        ).write_parquet(out_dir / f"{run_name}_{split_name}.parquet")
 
     torch.save({"model": best_state, "mode": mode, "label": label, "config": cfg},
-               out_dir / f"{mode}_{label}.pt")
-    (out_dir / f"{mode}_{label}_meta.json").write_text(
-        json.dumps({"mode": mode, "label": label, "best_val_auprc": best_ap,
+               out_dir / f"{run_name}.pt")
+    (out_dir / f"{run_name}_meta.json").write_text(
+        json.dumps({"mode": mode, "label": label, "train_frac": train_frac,
+                    "frac_seed": frac_seed, "best_val_auprc": best_ap,
                     "seconds": round(time.time() - t0)}, indent=1)
     )
     return out_dir
