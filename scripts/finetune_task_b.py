@@ -15,15 +15,23 @@ from claimsfm.finetune.train import run_finetune
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/finetune_b.yaml")
+    parser.add_argument("--scratch-le", action="store_true",
+                        help="run only the from-scratch label-efficiency arm (ablation 2 control)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config(args.config)
 
-    runs = [("full", 1.0, 0, "full_1.0"), ("scratch", 1.0, 0, "scratch_1.0")]
-    for frac in cfg["label_efficiency"]["fracs"]:
-        for s in range(cfg["label_efficiency"]["seeds"]):
-            runs.append(("full", frac, s, f"full_{frac}_s{s}"))
+    if args.scratch_le:
+        runs = []
+        for frac in cfg["label_efficiency"]["fracs"]:
+            for s in range(cfg["label_efficiency"]["seeds"]):
+                runs.append(("scratch", frac, s, f"scratch_{frac}_s{s}"))
+    else:
+        runs = [("full", 1.0, 0, "full_1.0"), ("scratch", 1.0, 0, "scratch_1.0")]
+        for frac in cfg["label_efficiency"]["fracs"]:
+            for s in range(cfg["label_efficiency"]["seeds"]):
+                runs.append(("full", frac, s, f"full_{frac}_s{s}"))
 
     for mode, frac, seed, name in runs:
         run_finetune(

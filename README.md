@@ -50,7 +50,7 @@ are committed in `configs/data.lock.yaml`.
 - [x] M2 — baselines (LR + tuned XGBoost, both tasks, frozen at `v0.2-baselines`)
 - [x] M3 — pretraining (12 epochs on a Vast 4090, val masked top-1 15.8% vs 1.4% frequency prior; probes in [reports/pretrain.md](reports/pretrain.md); **actual cost $0.52**)
 - [x] M4 — Task A fine-tune & eval ([report](reports/task_a_transformer.md)): **pretraining transfers** (full FT beats from-scratch, AUPRC +0.015/+0.029) but **XGBoost wins the task** (AUROC 0.762 vs 0.715 on cost) — reported straight; **actual cost $0.32**
-- [ ] M5 — Task B transfer & eval
+- [x] M5 — Task B transfer & eval ([report](reports/task_b_transformer.md)): **the money chart** — pretrained > scratch > XGBoost at 10% and 25% of fraud labels (0.679 vs 0.637 AUPRC at 25%), 3–10× lower seed variance; XGBoost leads only at 100%; **actual cost $0.30**
 - [ ] M6 — writeup & polish
 
 ## Budget ledger
@@ -59,5 +59,6 @@ are committed in `configs/data.lock.yaml`.
 |---|---|---|
 | M3 pretraining | $8 | **$0.52** (RTX 4090 @ $0.28/hr, incl. all debugging + a deliberate kill/resume drill) |
 | M4 Task A | $3 | **$0.32** (6 fine-tune runs: probe/full/scratch × 2 labels) |
-| M5 Task B | $3 | — |
+| M5 Task B | $3 | **$0.30** (14 runs incl. full label-efficiency grid, both arms) |
 | Reserve | $6 | — |
+| **Total to date** | $20 | **$1.14** |
