@@ -170,9 +170,12 @@ class LengthBucketBatches:
         return rng.permutation(len(self.batches)).tolist()
 
 
-def collate(pack: Pack, member_ids: np.ndarray) -> dict[str, torch.Tensor]:
+def collate(pack: Pack, member_ids: np.ndarray, pad_multiple: int = 64) -> dict[str, torch.Tensor]:
     rows = [pack.member(i) for i in member_ids]
     L = max(len(r["input_ids"]) for r in rows)
+    # quantize the padded length: a handful of distinct tensor shapes instead
+    # of one per batch (MPS recompiles kernels per shape; CUDA caches better too)
+    L = min(512, ((L + pad_multiple - 1) // pad_multiple) * pad_multiple)
     out = {}
     for name, dtype in [
         ("input_ids", torch.long), ("claim_type_ids", torch.long),

@@ -33,7 +33,7 @@ optim:
   grad_clip: 1.0
 
 train:
-  tokens_per_batch: 16384
+  tokens_per_batch: 4096      # 28k-class logits dominate memory; fits 8GB MPS
   max_epochs: 2
   early_stop_patience: 3
   checkpoint_every_steps: 50

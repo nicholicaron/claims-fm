@@ -32,7 +32,9 @@ optim:
   grad_clip: 1.0
 
 train:
-  tokens_per_batch: 65536     # length-bucketed; cost = n_seqs * batch_max_len
+  tokens_per_batch: 32768     # length-bucketed; cost = n_seqs * batch_max_len.
+                              # 28k-class logits (+fp32 CE upcast) dominate VRAM:
+                              # ~7.5GB peak at 32k tokens — comfortable on 24GB
   max_epochs: 12
   early_stop_patience: 3      # evals (one per epoch) without val-loss improvement
   checkpoint_every_steps: 1000

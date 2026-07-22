@@ -95,17 +95,20 @@ def evaluate(model, pack, batches, cfg, device, lut) -> dict:
                        batch["month_idx"], batch["visit_ids"])
         logits = model.mlm_logits(hidden)
         sel = labels != -100
-        loss = F.cross_entropy(logits[sel], labels[sel])
-        pred = logits[sel].argmax(-1)
-        gold = labels[sel]
-        total_loss += loss.item() * sel.sum().item()
-        total_masked += sel.sum().item()
-        total_correct += (pred == gold).sum().item()
-        gold_kind = lut.to(device)[gold]
+        loss = F.cross_entropy(
+            logits.view(-1, vocab_size), labels.view(-1), ignore_index=-100
+        )
+        pred = logits.argmax(-1)
+        hit = (pred == labels) & sel
+        n_sel = sel.sum().item()
+        total_loss += loss.item() * n_sel
+        total_masked += n_sel
+        total_correct += hit.sum().item()
+        gold_kind = lut.to(device)[labels.clamp(min=0)]
         for k in KIND_NAMES:
-            km = gold_kind == k
+            km = (gold_kind == k) & sel
             kind_masked[k] += km.sum().item()
-            kind_correct[k] += (km & (pred == gold)).sum().item()
+            kind_correct[k] += (km & hit).sum().item()
     model.train()
     out = {
         "val_loss": total_loss / max(1, total_masked),
@@ -206,8 +209,10 @@ def train(
                 hidden = model(masked, batch["claim_type_ids"], batch["age_years"],
                                batch["month_idx"], batch["visit_ids"])
                 logits = model.mlm_logits(hidden)
-                sel = labels != -100
-                loss = F.cross_entropy(logits[sel].float(), labels[sel])
+                # fixed-shape loss (no boolean gather): keeps MPS/CUDA graphs static
+                loss = F.cross_entropy(
+                    logits.view(-1, vocab_size).float(), labels.view(-1), ignore_index=-100
+                )
 
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -225,7 +230,9 @@ def train(
 
             if global_step % cfg["train"]["log_every_steps"] == 0:
                 with torch.no_grad():
-                    acc = (logits[sel].argmax(-1) == labels[sel]).float().mean().item()
+                    sel = labels != -100
+                    hits = (logits.argmax(-1) == labels) & sel
+                    acc = (hits.sum() / sel.sum().clamp(min=1)).item()
                 dt_s = time.time() - t0
                 logger.log({
                     "step": global_step, "epoch": epoch, "loss": round(loss.item(), 4),
