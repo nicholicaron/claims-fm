@@ -1,65 +1,93 @@
 # claims-fm
 
-A small claims foundation model for payer predictive modeling: pretrain a
-~10–25M-parameter BERT-style encoder on CMS DE-SynPUF synthetic Medicare
-claims sequences (masked-code modeling), then fine-tune it for two downstream
-payer tasks — member next-year risk stratification and provider fraud
-detection — benchmarked against tuned XGBoost baselines.
+**One pretrained claims encoder, two payer problems, honest baselines.**
+A ~17M-parameter BERT-style encoder pretrained on 517k synthetic Medicare
+claims histories (CMS DE-SynPUF, masked-code modeling), fine-tuned for
+member next-year risk and provider fraud detection, benchmarked against
+tuned XGBoost with the metrics a payer actually acts on. Total compute:
+**$1.14** of a $20 budget.
 
-Full project spec: [SPEC.md](SPEC.md) · data: [DATA.md](DATA.md) · baseline
-protocol & results: [baselines/](baselines/README.md).
+## Headline results (held-out test, single pass, 95% bootstrap CIs in reports)
 
-## Baseline results (frozen before any transformer training — tag `v0.2-baselines`)
+| Task | Model | AUROC | AUPRC | Payer metric |
+|---|---|---|---|---|
+| Member risk — top-decile cost (prev 10.0%) | **XGBoost** (engineered features) | **0.762** | **0.303** | capture@5% outreach 20.5% |
+| Member risk — top-decile cost | Pretrained transformer, fine-tuned | 0.715 | 0.246 | capture@5% outreach 17.0% |
+| Provider fraud (prev 9.4%), 100% labels | **Hybrid: XGBoost + encoder embeddings** | **0.957** | **0.718** | precision@50 **82%** |
+| Provider fraud, **25% of labels** | **Pretrained transformer** | 0.944¹ | **0.679** | vs XGBoost-alone 0.637 |
+| Provider fraud, 25% of labels | XGBoost alone | — | 0.637 (±0.050) | 3–10× higher seed variance |
 
-Test set touched once; 95% bootstrap CIs in the full reports.
+¹ AUROC at 100% labels; the 25%-label comparison is AUPRC (the money chart below).
 
-| Task | Label (prevalence) | Model | AUROC | AUPRC | Payer metric |
-|---|---|---|---|---|---|
-| A — member risk | inpatient admission 2010 (11.6%) | XGB (calibrated) | 0.710 | 0.218 | capture@5% outreach: 12.8% |
-| A — member risk | top-decile 2010 cost (10.0%) | XGB (calibrated) | 0.762 | 0.303 | capture@5% outreach: 20.5% |
-| B — provider fraud | fraud flag (9.4%) | LR | 0.961 | 0.749 | precision@50: 78% |
-| B — provider fraud | fraud flag (9.4%) | XGB | 0.952 | 0.711 | precision@100: 54%, recall 71% |
+<p>
+<img src="reports/figures/task_b_money_chart.png" width="49%" alt="Label efficiency: pretrained transformer beats XGBoost below full labels">
+<img src="baselines/figures/task_a_label_ip_reliability.png" width="49%" alt="Calibration before/after isotonic recalibration">
+</p>
 
-Honest notes: on Task B the val-selected XGB lost to plain logistic regression
-on test (CIs overlap heavily — provider features are nearly linearly
-separable here). Task A absolute numbers are depressed by DE-SynPUF's
-synthesis (weakened code–outcome correlations); post-isotonic calibration is
-excellent (ECE ≤ 0.007). Details: [results_task_a.md](baselines/results_task_a.md),
-[results_task_b.md](baselines/results_task_b.md).
+**Left — the money chart:** with 10–25% of fraud labels (the regime real SIUs
+live in), the pretrained encoder beats both its from-scratch twin and tuned
+XGBoost, with 3–10× lower variance. **Right — calibration as a first-class
+metric:** the tuned admission model's imbalance weighting wrecked its
+probabilities (ECE 0.32); val-fit isotonic recalibration fixed them
+(ECE 0.005) — payers consume probabilities, so this section exists.
 
-## Pipeline
+## The four findings
 
-```
-make env        # uv-managed Python 3.12 environment
-make download   # DE-SynPUF samples (manifest-driven, checksummed, integrity-checked)
-make eda        # M0 orientation notebook
-make tables     # raw CSV -> typed parquet
-make sequences  # member event sequences (+ Task A windowed variant)
-make vocab      # code vocabulary + tokenizer artifacts
-make overlap    # Kaggle<->DE-SynPUF vocab overlap gate (>= ~60% required)
-make test       # ETL invariant + leakage test suite
-```
+1. **Tuned XGBoost wins member risk on synthetic data — and we measured why.**
+   Not just observed: a hybrid XGBoost given the encoder's embeddings on top
+   of engineered features scored *identically* to features-alone (0.763 vs
+   0.762 AUROC). On DE-SynPUF, the sequence channel holds no signal the
+   aggregates don't — the ceiling is the synthesis, not the method.
+2. **Cross-dataset pretraining transfers.** From-scratch controls lose to the
+   pretrained encoder at every label fraction on a fraud dataset the encoder
+   never saw — the DE-SynPUF→Kaggle ICD-9 vocabulary bridge (99.9% dx
+   coverage, gated before any GPU spend) did its job.
+3. **Pretraining is label leverage.** At 25% of fraud labels the pretrained
+   encoder (0.679 AUPRC) approaches XGBoost's full-label performance (0.711);
+   the hybrid's best seed matches it outright. Confirmed fraud labels are the
+   scarcest resource a payer has.
+4. **The deployment answer is a ladder, not a winner.** Full labels → ship
+   the simple model (LR hit 0.749 on fraud). Scarce labels → fine-tuned
+   encoder (stability) or hybrid (peak precision@k). Member risk on real
+   data → rerun the hybrid test first; it's the cheap experiment that says
+   whether sequences carry signal your features miss.
 
-Data lives under `data/` (gitignored); provenance, checksums, and row counts
-are committed in `configs/data.lock.yaml`.
+Full analysis: [technical writeup](reports/writeup.md) ·
+[Task A report](reports/task_a_transformer.md) ·
+[Task B report](reports/task_b_transformer.md) ·
+[baselines](baselines/README.md) · [model card](MODEL_CARD.md) ·
+[data documentation](DATA.md) · [pretraining report](reports/pretrain.md)
 
-## Status
+## Milestones & tags
 
-- [x] M0 — scaffold & data (7 samples downloaded + checksummed, EDA notebook)
-- [x] M1 — ETL, vocabulary, tokenizer (28k-token vocab; Kaggle dx overlap gate **passed at 99.9%**; leakage tests green)
-- [x] M2 — baselines (LR + tuned XGBoost, both tasks, frozen at `v0.2-baselines`)
-- [x] M3 — pretraining (12 epochs on a Vast 4090, val masked top-1 15.8% vs 1.4% frequency prior; probes in [reports/pretrain.md](reports/pretrain.md); **actual cost $0.52**)
-- [x] M4 — Task A fine-tune & eval ([report](reports/task_a_transformer.md)): **pretraining transfers** (full FT beats from-scratch, AUPRC +0.015/+0.029) but **XGBoost wins the task** (AUROC 0.762 vs 0.715 on cost) — reported straight; **actual cost $0.32**
-- [x] M5 — Task B transfer & eval ([report](reports/task_b_transformer.md)): **the money chart** — pretrained > scratch > XGBoost at 10% and 25% of fraud labels (0.679 vs 0.637 AUPRC at 25%), 3–10× lower seed variance; XGBoost leads only at 100%; **actual cost $0.30**
-- [x] M5.5 — hybrid follow-up (XGBoost + frozen embeddings, $0 local): Task A ceiling **measured** (embeddings add nothing to engineered features on synthetic member data); Task B embeddings lift XGBoost to 0.688 AUPRC at 25% labels and best-in-class P@50 (82%) at 100%
-- [ ] M6 — writeup & polish
-
-## Budget ledger
-
-| Item | Budgeted | Actual |
+| Tag | Milestone | Cost |
 |---|---|---|
-| M3 pretraining | $8 | **$0.52** (RTX 4090 @ $0.28/hr, incl. all debugging + a deliberate kill/resume drill) |
-| M4 Task A | $3 | **$0.32** (6 fine-tune runs: probe/full/scratch × 2 labels) |
-| M5 Task B | $3 | **$0.30** (14 runs incl. full label-efficiency grid, both arms) |
-| Reserve | $6 | — |
-| **Total to date** | $20 | **$1.14** |
+| — | M0–M1 scaffold, ETL, vocab, leakage tests, 99.9% overlap gate | $0 |
+| `v0.2-baselines` | M2 LR + tuned XGBoost frozen **before any transformer work** | $0 |
+| `v0.3-pretrained` | M3 masked-code pretraining, 12 epochs, 517k members | $0.52 |
+| `v0.4-task-a` | M4 Task A fine-tune: probe / full / from-scratch | $0.32 |
+| `v0.5-task-b` | M5 Task B transfer + label-efficiency grid (both arms) | $0.30 |
+| `v1.0` | M5.5 hybrid experiment ($0, local) + M6 writeup | $0 |
+
+**Budget ledger: $1.14 spent of $20** (RTX 4090 spot instances at
+$0.25–0.29/hr; ledger includes all debugging and deliberate kill/resume
+drills). Reserve unspent.
+
+## Reproduce
+
+```
+make env         # uv-managed Python 3.12
+make download    # DE-SynPUF samples 1–7, checksummed + integrity-verified
+make m1          # tables → sequences → vocab → overlap gate → leakage tests
+make m2          # cohorts, features, baselines (tuned on train/val, test once)
+# M3–M5 GPU runs: ops/vast_runbook.md (provision → train → pull → destroy)
+uv run pytest -q # 43 tests: ETL invariants, leakage rules, masking, resume determinism
+```
+
+Every run is config-driven (`configs/*.yaml`) and seeded; split assignments
+are content-hashed and enforced by tests; the test set was touched once per
+task. Data provenance, checksums, and the decision log live in
+[DATA.md](DATA.md) and `configs/data.lock.yaml`.
+
+Not built (by design): the stretch Streamlit demo — gated behind M6 in the
+spec and cut in favor of the hybrid ablation, which changed the conclusions.
