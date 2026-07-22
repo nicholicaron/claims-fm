@@ -24,9 +24,13 @@ BENE_ID = "DESYNPUF_ID"
 
 
 def _bene_ids(cfg: dict[str, Any], sample: int, year: int) -> set[str]:
+    # Prefer the typed parquet (raw CSVs are deleted after conversion to save
+    # disk; the checksummed zips remain the source of truth).
+    pq = data_path(cfg, "interim") / "synpuf" / f"sample_{sample:02d}" / f"beneficiary_{year}.parquet"
+    if pq.exists():
+        return set(pl.scan_parquet(pq).select(BENE_ID).collect()[BENE_ID])
     lock = load_lock()
-    key = f"sample_{sample:02d}:beneficiary_{year}"
-    entry = lock["synpuf"][key]
+    entry = lock["synpuf"][f"sample_{sample:02d}:beneficiary_{year}"]
     csv = data_path(cfg, "raw") / "synpuf" / f"sample_{sample:02d}" / entry["csv_file"]
     return set(
         pl.scan_csv(csv, infer_schema_length=0).select(BENE_ID).collect()[BENE_ID]

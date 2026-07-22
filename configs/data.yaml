@@ -69,4 +69,5 @@ etl:
   max_event_year: 2010
   vocab_min_count: 10          # selected from the 5/10/25 sweep, see DATA.md
   vocab_min_count_sweep: [5, 10, 25]
+  rx_top_k: 15000              # RX capped by frequency; rationale in DATA.md
   vocab_source_roles: [pretrain]
