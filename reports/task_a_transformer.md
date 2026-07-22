@@ -95,3 +95,15 @@ code 5, n=364) shows the weakest discrimination and calibration for both
 labels — same direction as the XGBoost baseline. Flagged for the writeup's
 fairness discussion rather than smoothed over.
 
+
+## Addendum — the hybrid follow-up (M5.5)
+
+To separate "the transformer is worse" from "the sequence channel is empty,"
+XGBoost was re-tuned with the identical M2 protocol on
+[159 engineered features ⊕ 320-d frozen pretrained `[CLS]` embedding]
+(`scripts/run_hybrid.py`; `reports/metrics_hybrid.json`). Result: identical
+to the feature-only baseline (admissions AUROC 0.713 vs 0.710; cost 0.763 vs
+0.762 — inside CI noise). On synthetic member histories the encoder contains
+no predictive signal the engineered features don't already carry: the Task A
+ceiling is measured, not assumed. With real claims, where sequence structure
+survives, this is the first experiment to rerun.

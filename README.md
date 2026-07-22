@@ -51,6 +51,7 @@ are committed in `configs/data.lock.yaml`.
 - [x] M3 — pretraining (12 epochs on a Vast 4090, val masked top-1 15.8% vs 1.4% frequency prior; probes in [reports/pretrain.md](reports/pretrain.md); **actual cost $0.52**)
 - [x] M4 — Task A fine-tune & eval ([report](reports/task_a_transformer.md)): **pretraining transfers** (full FT beats from-scratch, AUPRC +0.015/+0.029) but **XGBoost wins the task** (AUROC 0.762 vs 0.715 on cost) — reported straight; **actual cost $0.32**
 - [x] M5 — Task B transfer & eval ([report](reports/task_b_transformer.md)): **the money chart** — pretrained > scratch > XGBoost at 10% and 25% of fraud labels (0.679 vs 0.637 AUPRC at 25%), 3–10× lower seed variance; XGBoost leads only at 100%; **actual cost $0.30**
+- [x] M5.5 — hybrid follow-up (XGBoost + frozen embeddings, $0 local): Task A ceiling **measured** (embeddings add nothing to engineered features on synthetic member data); Task B embeddings lift XGBoost to 0.688 AUPRC at 25% labels and best-in-class P@50 (82%) at 100%
 - [ ] M6 — writeup & polish
 
 ## Budget ledger

@@ -44,6 +44,8 @@ def main() -> None:
     sidecar = pl.read_parquet(REPO_ROOT / cfg["data"]["pack_dir"] / "sidecar.parquet")
     pack_meta = json.loads((REPO_ROOT / cfg["data"]["pack_dir"] / "meta.json").read_text())
     baselines = json.loads((REPO_ROOT / "baselines/metrics_task_b.json").read_text())
+    hybrid_path = REPO_ROOT / "reports" / "metrics_hybrid.json"
+    hybrid = json.loads(hybrid_path.read_text()) if hybrid_path.exists() else None
 
     sub_val = sidecar.filter(pl.col("split") == "val").sort("Provider")
     sub_test = sidecar.filter(pl.col("split") == "test").sort("Provider")
@@ -100,7 +102,9 @@ def main() -> None:
 
     fig_dir = REPO_ROOT / "reports" / "figures"
     fig_dir.mkdir(parents=True, exist_ok=True)
-    _money_chart(le, le_scratch, xgb_le, fig_dir / "task_b_money_chart.png")
+    _money_chart(le, le_scratch, xgb_le,
+                 hybrid["task_b_label_efficiency_test_auprc"] if hybrid else None,
+                 fig_dir / "task_b_money_chart.png")
 
     kept_pct = 100 * pack_meta["claims_kept"] / pack_meta["claims_total"]
     prev = y_test.mean()
@@ -135,6 +139,13 @@ def main() -> None:
         for k in ks:
             row += f" {_ci_str(m['ci'], f'precision_at_{k}', pct=True)} |"
         lines.append(row)
+    if hybrid:
+        h = hybrid["task_b"]
+        row = (f"| Hybrid: XGBoost + frozen embeddings (M5.5) | {_ci_str(h['ci'], 'auroc')} "
+               f"| {_ci_str(h['ci'], 'auprc')} |")
+        for k in ks:
+            row += f" {_ci_str(h['ci'], f'precision_at_{k}', pct=True)} |"
+        lines.append(row)
 
     op = results["models"]["full_1.0"]["operating_point"]
     lines += [
@@ -144,8 +155,8 @@ def main() -> None:
         "",
         "## Label efficiency (test AUPRC; ± is std over subsample seeds)",
         "",
-        "| Labeled providers | XGBoost | Pretrained transformer | Transformer from scratch |",
-        "|---|---|---|---|",
+        "| Labeled providers | XGBoost | Pretrained transformer | Transformer from scratch | Hybrid (XGB+emb) |",
+        "|---|---|---|---|---|",
     ]
 
     def _cell(vals: list[float]) -> str:
@@ -154,10 +165,12 @@ def main() -> None:
         s = f"{np.mean(vals):.3f}"
         return s + (f" (±{np.std(vals):.3f})" if len(vals) > 1 else "")
 
+    hybrid_le = hybrid["task_b_label_efficiency_test_auprc"] if hybrid else {}
     for frac in ("0.1", "0.25", "1.0"):
         lines.append(
             f"| {float(frac):.0%} | {_cell(xgb_le.get(frac, []))} "
-            f"| {_cell(le.get(frac, []))} | {_cell(le_scratch.get(frac, []))} |"
+            f"| {_cell(le.get(frac, []))} | {_cell(le_scratch.get(frac, []))} "
+            f"| {_cell(hybrid_le.get(frac, []))} |"
         )
     lines += ["", "![money chart](figures/task_b_money_chart.png)", ""]
 
@@ -168,14 +181,17 @@ def main() -> None:
     print("wrote reports/task_b_transformer.md")
 
 
-def _money_chart(le: dict, le_scratch: dict, xgb_le: dict, out: Path) -> None:
+def _money_chart(le: dict, le_scratch: dict, xgb_le: dict, hybrid_le: dict | None, out: Path) -> None:
     fig, ax = plt.subplots(figsize=(7, 4.5))
     keys = ("0.1", "0.25", "1.0")
     x = [10, 25, 100]
-    for series, color, marker, label in (
+    series_list = [
         (le, "tab:orange", "o-", "Pretrained transformer"),
         (le_scratch, "tab:blue", "D--", "Transformer from scratch"),
-    ):
+    ]
+    if hybrid_le:
+        series_list.append((hybrid_le, "tab:green", "^-.", "Hybrid: XGB + frozen embeddings"))
+    for series, color, marker, label in series_list:
         pts = [(xi, series[k]) for xi, k in zip(x, keys) if k in series]
         for xi, vals in pts:
             ax.plot([xi] * len(vals), vals, ".", color=color, ms=6, alpha=0.5)
