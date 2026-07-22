@@ -20,6 +20,9 @@ dev = [
     "nbconvert>=7.16",
     "kaggle>=1.6",
 ]
+train = [
+    "torch>=2.13.0",
+]
 
 [build-system]
 requires = ["hatchling"]
