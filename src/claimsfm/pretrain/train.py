@@ -162,13 +162,15 @@ def train(
     start_epoch, start_batch, global_step = 0, 0, 0
     best_val, bad_evals = float("inf"), 0
     if resume:
-        state = torch.load(resume, map_location=device, weights_only=False)
+        # always CPU: load_state_dict moves params/opt state to the live device,
+        # and set_rng_state requires a CPU ByteTensor
+        state = torch.load(resume, map_location="cpu", weights_only=False)
         model.load_state_dict(state["model"])
         opt.load_state_dict(state["optimizer"])
         sched.load_state_dict(state["scheduler"])
         start_epoch, start_batch = state["epoch"], state["batch_idx"]
         global_step, best_val, bad_evals = state["global_step"], state["best_val"], state["bad_evals"]
-        torch.set_rng_state(state["torch_rng"])
+        torch.set_rng_state(state["torch_rng"].cpu())
         log.info("resumed from %s at epoch %d batch %d step %d", resume, start_epoch, start_batch, global_step)
 
     logger = JsonlLogger(out_dir / "metrics.jsonl", maybe_wandb(cfg))
