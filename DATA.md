@@ -106,6 +106,14 @@ as flat mmap-friendly arrays (u16 ids + u8 age/month/claim-type + u16 visit,
 483 MB). 2% member-level MLM validation holdout (11,869 members, seeded
 hash). Provenance in `pretrain_pack/meta.json` (vocab hash, counts, source).
 
+## Task A fine-tuning pack (`data/processed/task_a_pack/`)
+
+Cohort-aligned pack for M4: all 114,041 Task A members (11.8M positions),
+including 5,856 members with empty observation history (`[CLS]`-only rows —
+healthy members score too). Sidecar parquet carries labels/splits/slice
+demographics in identical member order; the split assignment reproduces the
+committed M2 contract hash exactly (verified at build and in tests).
+
 ## Kaggle ↔ DE-SynPUF vocabulary overlap (M1 gate: ≥ ~60%)
 
 **PASS — 99.9% of Kaggle dx-code occurrences** (2,085,893 real occurrences,

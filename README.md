@@ -49,7 +49,7 @@ are committed in `configs/data.lock.yaml`.
 - [x] M1 — ETL, vocabulary, tokenizer (28k-token vocab; Kaggle dx overlap gate **passed at 99.9%**; leakage tests green)
 - [x] M2 — baselines (LR + tuned XGBoost, both tasks, frozen at `v0.2-baselines`)
 - [x] M3 — pretraining (12 epochs on a Vast 4090, val masked top-1 15.8% vs 1.4% frequency prior; probes in [reports/pretrain.md](reports/pretrain.md); **actual cost $0.52**)
-- [ ] M4 — Task A fine-tune & eval
+- [x] M4 — Task A fine-tune & eval ([report](reports/task_a_transformer.md)): **pretraining transfers** (full FT beats from-scratch, AUPRC +0.015/+0.029) but **XGBoost wins the task** (AUROC 0.762 vs 0.715 on cost) — reported straight; **actual cost $0.32**
 - [ ] M5 — Task B transfer & eval
 - [ ] M6 — writeup & polish
 
@@ -58,6 +58,6 @@ are committed in `configs/data.lock.yaml`.
 | Item | Budgeted | Actual |
 |---|---|---|
 | M3 pretraining | $8 | **$0.52** (RTX 4090 @ $0.28/hr, incl. all debugging + a deliberate kill/resume drill) |
-| M4 Task A | $3 | — |
+| M4 Task A | $3 | **$0.32** (6 fine-tune runs: probe/full/scratch × 2 labels) |
 | M5 Task B | $3 | — |
 | Reserve | $6 | — |
