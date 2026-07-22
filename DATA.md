@@ -98,6 +98,14 @@ excludes pre-2008 dates by year filtering — conservative and leakage-safe.
   apparent dx occurrences placeholder junk (first gate run measured 30%
   coverage with 90% type coverage — that inversion was the tell).
 
+## Pretraining pack (`data/processed/pretrain_pack/`)
+
+Tokenized training artifact for M3: 517,390 members → 71,639,647 positions
+(events + `[CLS]`/`[VISIT]` structure, max_len 512 keep-most-recent), stored
+as flat mmap-friendly arrays (u16 ids + u8 age/month/claim-type + u16 visit,
+483 MB). 2% member-level MLM validation holdout (11,869 members, seeded
+hash). Provenance in `pretrain_pack/meta.json` (vocab hash, counts, source).
+
 ## Kaggle ↔ DE-SynPUF vocabulary overlap (M1 gate: ≥ ~60%)
 
 **PASS — 99.9% of Kaggle dx-code occurrences** (2,085,893 real occurrences,
