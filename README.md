@@ -6,7 +6,26 @@ claims sequences (masked-code modeling), then fine-tune it for two downstream
 payer tasks — member next-year risk stratification and provider fraud
 detection — benchmarked against tuned XGBoost baselines.
 
-Full project spec: [SPEC.md](SPEC.md). Dataset documentation: DATA.md (added at M1).
+Full project spec: [SPEC.md](SPEC.md) · data: [DATA.md](DATA.md) · baseline
+protocol & results: [baselines/](baselines/README.md).
+
+## Baseline results (frozen before any transformer training — tag `v0.2-baselines`)
+
+Test set touched once; 95% bootstrap CIs in the full reports.
+
+| Task | Label (prevalence) | Model | AUROC | AUPRC | Payer metric |
+|---|---|---|---|---|---|
+| A — member risk | inpatient admission 2010 (11.6%) | XGB (calibrated) | 0.710 | 0.218 | capture@5% outreach: 12.8% |
+| A — member risk | top-decile 2010 cost (10.0%) | XGB (calibrated) | 0.762 | 0.303 | capture@5% outreach: 20.5% |
+| B — provider fraud | fraud flag (9.4%) | LR | 0.961 | 0.749 | precision@50: 78% |
+| B — provider fraud | fraud flag (9.4%) | XGB | 0.952 | 0.711 | precision@100: 54%, recall 71% |
+
+Honest notes: on Task B the val-selected XGB lost to plain logistic regression
+on test (CIs overlap heavily — provider features are nearly linearly
+separable here). Task A absolute numbers are depressed by DE-SynPUF's
+synthesis (weakened code–outcome correlations); post-isotonic calibration is
+excellent (ECE ≤ 0.007). Details: [results_task_a.md](baselines/results_task_a.md),
+[results_task_b.md](baselines/results_task_b.md).
 
 ## Pipeline
 
@@ -28,7 +47,7 @@ are committed in `configs/data.lock.yaml`.
 
 - [x] M0 — scaffold & data (7 samples downloaded + checksummed, EDA notebook)
 - [x] M1 — ETL, vocabulary, tokenizer (28k-token vocab; Kaggle dx overlap gate **passed at 99.9%**; leakage tests green)
-- [ ] M2 — baselines (LR + XGBoost, both tasks)
+- [x] M2 — baselines (LR + tuned XGBoost, both tasks, frozen at `v0.2-baselines`)
 - [ ] M3 — pretraining
 - [ ] M4 — Task A fine-tune & eval
 - [ ] M5 — Task B transfer & eval
