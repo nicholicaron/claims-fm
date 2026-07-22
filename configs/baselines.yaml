@@ -1,0 +1,53 @@
+# M2 baseline protocol. Splits and cohort rules defined here are the contract
+# M4/M5 reuse — change nothing after baselines are frozen (tag v0.2-baselines).
+
+seed: 20260721
+
+splits:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+task_a:
+  eval_samples: [1, 2]
+  observation_years: [2008, 2009]
+  prediction_year: 2010
+  cohort:
+    require_full_ab_coverage_years: [2008, 2009]   # HI==12 and SMI==12
+    require_zero_hmo_years: [2008, 2009, 2010]
+    alive_entering: 2010
+  cost_label_quantile: 0.9        # threshold computed on train split only
+  dx_category_top_n: 50           # 3-digit ICD-9 prefixes, ranked on train only
+  recency_windows_days: [90, 180]
+  age_bands: [0, 65, 70, 75, 80, 85, 200]
+  subgroup_fields: [sex, race, age_band]
+
+task_b:
+  label_efficiency_fracs: [0.10, 0.25, 1.0]
+  label_efficiency_seeds: 3       # repeats for the sub-100% fractions
+  precision_at_k: [50, 100]
+  operating_point_k: 100          # ~SIU caseload assumption, stated in results
+
+models:
+  lr:
+    C_grid: [0.01, 0.1, 1.0, 10.0]
+    class_weight: [null, balanced]
+    max_iter: 2000
+  xgb:
+    n_search: 40
+    early_stopping_rounds: 50
+    max_estimators: 2000
+    space:
+      max_depth: [3, 8]           # integer uniform
+      learning_rate: [0.01, 0.3]  # log-uniform
+      min_child_weight: [1, 5, 10, 20]
+      subsample: [0.6, 1.0]
+      colsample_bytree: [0.6, 1.0]
+      reg_lambda: [0.1, 10.0]     # log-uniform
+      scale_pos_weight: [1.0, neg_over_pos]
+
+eval:
+  bootstrap_n: 1000
+  lift_capacities: [0.01, 0.05, 0.10]
+  ece_bins: 10
+  calibration_methods: [platt, isotonic]   # winner by val Brier

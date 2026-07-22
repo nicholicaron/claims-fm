@@ -28,3 +28,17 @@ test:
 	uv run pytest -q
 
 m1: tables sequences vocab overlap test
+
+task-a:
+	uv run python scripts/build_task_a.py --config configs/baselines.yaml
+
+task-b:
+	uv run python scripts/build_task_b.py --config configs/baselines.yaml
+
+baselines:
+	uv run python scripts/run_baselines.py --config configs/baselines.yaml
+
+baselines-final:
+	uv run python scripts/run_baselines.py --config configs/baselines.yaml --final-eval
+
+m2: task-a task-b baselines baselines-final test
