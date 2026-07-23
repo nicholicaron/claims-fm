@@ -127,3 +127,25 @@ Known Kaggle data-quality caveat: `ClmProcedureCode_*` columns were written
 as floats by the dataset author, so procedure codes lost leading zeros
 irrecoverably (e.g. `0066` → `66`); this affects a portion of the 7.9%
 uncovered px occurrences. Diagnosis codes are strings and unaffected.
+
+## Phase 2 corpus: samples 3–20 (`pretrain_pack_18s`)
+
+Scaling-study extension (2026-07-23, prereg: reports/scaling_prereg.md):
+samples 8–20 added to the manifest and downloaded from the same verified CMS
+URL patterns — all 78 files served by the primary host, zero fallbacks, and
+every sample passes the cross-year member-ID nesting check at 1.0. Combined
+pretraining corpus: **1,862,756 members / 257,856,291 packed positions**
+(~3.6× v1.0), pack ~1.7 GB. Extracted CSVs are deleted after table
+conversion (checksummed zips remain the source of truth).
+
+The vocabulary is **frozen** at the v1.0 build (28,203 tokens from samples
+3–7, counts hash `c4254b165c1c89aa`); codes unseen there map to `[UNK]`.
+Measured `[UNK]` share of non-special positions: **32.04%** on the 18-sample
+corpus vs 32.02% on the v1.0 corpus — the two are distributionally identical,
+and the rate is dominated by the deliberate RX top-15k NDC-9 cap (DE-SynPUF's
+near-flat synthetic NDC frequencies put most RX occurrences outside any
+practical vocabulary). `[UNK]` is never a masking target, so masked-accuracy
+numbers are unaffected. The v1.0 517,390 members occupy the same rows in the
+same order with identical splits and tokens in the new pack (verified at
+build); pack meta now records `source_samples`, and pretokenize refuses to
+overwrite a pack built from a different corpus.
