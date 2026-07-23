@@ -14,7 +14,8 @@ cd "$(dirname "$0")/.."
 HOST=${1:?host}; PORT=${2:?port}; CKPT=${3:-data/checkpoints/pretrain}
 mkdir -p "$CKPT"
 while true; do
-  rsync -az -e "ssh -p $PORT -o StrictHostKeyChecking=no" \
+  rsync -az --partial --timeout=60 \
+    -e "ssh -p $PORT -o StrictHostKeyChecking=no -o ConnectTimeout=20" \
     --include='best.pt' --include='last.pt' --include='metrics.jsonl' --exclude='*' \
     "root@$HOST:/workspace/claims-fm/$CKPT/" \
     "$CKPT/" 2>/dev/null || echo "$(date +%T) pull failed (instance busy/down?)"
