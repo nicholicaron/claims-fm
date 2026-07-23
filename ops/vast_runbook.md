@@ -70,6 +70,11 @@ rebuild the 5-sample pack from the 18-sample corpus. Never re-pretokenize into
 `n_members: 517390`. Pack meta gains a `source_samples` field with the Phase 2
 pretokenize changes.
 
+Hier grids: the default `scripts/finetune_task_b_hier.py` run covers full +
+probe + the full-mode LE grid; the REGISTERED hier-scratch LE arm needs the
+separate `--scratch-le` invocation — don't forget it, or the report renders
+"—" cells for scratch.
+
 Downstream fine-tunes (Task A/B, hier grids) also run on the instance; sync the
 task packs separately when that phase starts:
 `rsync -avz --partial -e "ssh -p PORT ..." data/processed/task_a_pack data/processed/task_b_pack data/processed/task_b_pack_chunked data/processed/task_?_meta.json root@HOST:/workspace/claims-fm/data/processed/`

@@ -37,6 +37,9 @@ class GatedAttentionPool(nn.Module):
         mask: torch.Tensor,        # (P, K) bool, True where a chunk exists
     ) -> tuple[torch.Tensor, torch.Tensor]:
         P, K = mask.shape
+        # every provider must own >=1 chunk (builder emits a lone-[CLS] chunk
+        # for empty histories); an all-empty row would NaN through the softmax
+        assert bool(mask.any(dim=1).all()), "provider with zero chunks in pooling mask"
         scores = self.w(torch.tanh(self.V(chunk_cls)) * torch.sigmoid(self.U(chunk_cls))).squeeze(-1)
         # dense scatter into fixed (P, K) grids: advanced-indexing assignment
         # only (MPS-safe; no scatter_reduce). Empty slots score -inf -> weight 0.
