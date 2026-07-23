@@ -1,0 +1,48 @@
+# Phase 2 scaling cell C1: the v1.0 17M encoder retrained on the 18-sample
+# corpus (samples 3-20, ~1.86M members). Differs from configs/pretrain.yaml
+# ONLY in pack_dir and out_dir — model/optim/masking/seed are identical so the
+# data axis is isolated (prereg: reports/scaling_prereg.md).
+
+seed: 20260721
+
+data:
+  pack_dir: data/processed/pretrain_pack_18s
+  val_frac: 0.02              # member-level MLM validation holdout (seeded hash)
+  max_len: 512                # keep-most-recent truncation at tokenize time
+
+model:
+  d_model: 320
+  n_layers: 6
+  n_heads: 8
+  d_ff: 1280
+  dropout: 0.1
+  max_positions: 512
+  n_claim_types: 4            # 0 = special positions, 1..3 = IP/OP/RX
+  n_ages: 112                 # age clipped to 0..110, +1 pad
+  n_months: 37                # 0..35 study months, +1 pad
+
+masking:
+  rate: 0.15                  # of eligible (non-special) positions
+  prob_mask: 0.8              # -> [MASK]
+  prob_random: 0.1            # -> random code token; remainder kept
+
+optim:
+  peak_lr: 3.0e-4
+  weight_decay: 0.01
+  betas: [0.9, 0.98]
+  warmup_frac: 0.03
+  final_lr_frac: 0.1
+  grad_clip: 1.0
+
+train:
+  tokens_per_batch: 16384     # length-bucketed; cost = n_seqs * batch_max_len.
+                              # 28k-class logits dominate VRAM: bf16 logits +
+                              # fp32 CE upcast + softmax backward ≈ 3 full-size
+                              # copies; 32k tokens OOM'd a 24GB 4090 (measured),
+                              # 16k peaks ~11GB with headroom for shape variance
+  max_epochs: 12
+  early_stop_patience: 3      # evals (one per epoch) without val-loss improvement
+  checkpoint_every_steps: 1000
+  keep_checkpoints: 3         # plus best-val, kept separately
+  log_every_steps: 50
+  out_dir: data/checkpoints/pretrain_17m_18s

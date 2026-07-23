@@ -55,6 +55,24 @@ synpuf:
     "5": pretrain
     "6": pretrain
     "7": pretrain
+    # Samples 8-20 added for the Phase 2 scaling study (18-sample corpus;
+    # reports/scaling_prereg.md). URL pattern spot-verified live for samples
+    # 8/13/20, all six file types, on 2026-07-23 (all HTTP 200). The vocabulary
+    # stays FROZEN at the 28,203 tokens built from samples 3-7; codes unseen
+    # there map to [UNK] (do not re-run `make vocab`).
+    "8": pretrain
+    "9": pretrain
+    "10": pretrain
+    "11": pretrain
+    "12": pretrain
+    "13": pretrain
+    "14": pretrain
+    "15": pretrain
+    "16": pretrain
+    "17": pretrain
+    "18": pretrain
+    "19": pretrain
+    "20": pretrain
 
   # Carrier claims deferred per SPEC §7 M1 / §10 (largest files); revisit only
   # if ahead of schedule.

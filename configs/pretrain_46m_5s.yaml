@@ -1,0 +1,46 @@
+# Phase 2 scaling cell C3: the ~46.3M encoder on the ORIGINAL 5-sample corpus
+# (samples 3-7, 517k members) — the params-only cell. Identical to
+# pretrain_46m_18s.yaml except pack_dir/out_dir; identical to pretrain.yaml
+# except the model block. Directly tests "would a bigger model alone have
+# helped?" (prereg: reports/scaling_prereg.md, prediction P3).
+
+seed: 20260721
+
+data:
+  pack_dir: data/processed/pretrain_pack
+  val_frac: 0.02              # member-level MLM validation holdout (seeded hash)
+  max_len: 512                # keep-most-recent truncation at tokenize time
+
+model:
+  d_model: 512
+  n_layers: 10
+  n_heads: 8
+  d_ff: 2048
+  dropout: 0.1
+  max_positions: 512
+  n_claim_types: 4            # 0 = special positions, 1..3 = IP/OP/RX
+  n_ages: 112                 # age clipped to 0..110, +1 pad
+  n_months: 37                # 0..35 study months, +1 pad
+
+masking:
+  rate: 0.15                  # of eligible (non-special) positions
+  prob_mask: 0.8              # -> [MASK]
+  prob_random: 0.1            # -> random code token; remainder kept
+
+optim:
+  peak_lr: 3.0e-4
+  weight_decay: 0.01
+  betas: [0.9, 0.98]
+  warmup_frac: 0.03
+  final_lr_frac: 0.1
+  grad_clip: 1.0
+
+train:
+  tokens_per_batch: 16384     # same VRAM note as pretrain_46m_18s.yaml:
+                              # fall back 12288 -> 8192 on OOM
+  max_epochs: 12
+  early_stop_patience: 3      # evals (one per epoch) without val-loss improvement
+  checkpoint_every_steps: 1000
+  keep_checkpoints: 3         # plus best-val, kept separately
+  log_every_steps: 50
+  out_dir: data/checkpoints/pretrain_46m_5s

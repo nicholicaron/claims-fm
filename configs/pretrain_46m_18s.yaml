@@ -1,0 +1,48 @@
+# Phase 2 scaling cell C2: ~46.3M-param encoder (10L x d512 x ff2048, head_dim
+# 64) on the 18-sample corpus. Embedding is 28,203 x 512 ≈ 14.4M of the total;
+# the MLM head stays weight-tied. Optim/masking/seed identical to the other
+# cells (prereg: reports/scaling_prereg.md).
+
+seed: 20260721
+
+data:
+  pack_dir: data/processed/pretrain_pack_18s
+  val_frac: 0.02              # member-level MLM validation holdout (seeded hash)
+  max_len: 512                # keep-most-recent truncation at tokenize time
+
+model:
+  d_model: 512
+  n_layers: 10
+  n_heads: 8
+  d_ff: 2048
+  dropout: 0.1
+  max_positions: 512
+  n_claim_types: 4            # 0 = special positions, 1..3 = IP/OP/RX
+  n_ages: 112                 # age clipped to 0..110, +1 pad
+  n_months: 37                # 0..35 study months, +1 pad
+
+masking:
+  rate: 0.15                  # of eligible (non-special) positions
+  prob_mask: 0.8              # -> [MASK]
+  prob_random: 0.1            # -> random code token; remainder kept
+
+optim:
+  peak_lr: 3.0e-4
+  weight_decay: 0.01
+  betas: [0.9, 0.98]
+  warmup_frac: 0.03
+  final_lr_frac: 0.1
+  grad_clip: 1.0
+
+train:
+  tokens_per_batch: 16384     # vocab (and so the dominant logit tensors) is
+                              # unchanged from the 17M runs, but d512/10L adds
+                              # ~2.7x activations; if the 24GB 4090 OOMs, drop
+                              # to 12288, then 8192 — cosine schedule is
+                              # step-count-based so no other knob moves
+  max_epochs: 12
+  early_stop_patience: 3      # evals (one per epoch) without val-loss improvement
+  checkpoint_every_steps: 1000
+  keep_checkpoints: 3         # plus best-val, kept separately
+  log_every_steps: 50
+  out_dir: data/checkpoints/pretrain_46m_18s
