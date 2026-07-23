@@ -78,10 +78,17 @@ def test_sequence_event_counts_reconcile(cfg, processed):
 
 
 def test_cross_year_beneficiary_consistency(cfg, lock):
+    checked = 0
     for sample_str in cfg["synpuf"]["samples"]:
+        # the manifest may list samples not yet downloaded (Phase 2 adds 8-20
+        # ahead of the corpus build); verify only what the lock records
+        if f"sample_{int(sample_str):02d}:beneficiary_2008" not in lock["synpuf"]:
+            continue
+        checked += 1
         overlaps = cross_year_consistency(cfg, int(sample_str))
         for pair, frac in overlaps.items():
             assert frac >= 0.5, f"sample {sample_str} {pair}: {frac:.3f}"
+    assert checked > 0, "no downloaded samples to verify"
 
 
 def test_sequence_build_deterministic(cfg):

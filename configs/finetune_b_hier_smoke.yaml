@@ -1,0 +1,48 @@
+# MPS/CPU smoke variant of finetune_b_hier.yaml: 30 steps, small batches.
+#   PYTHONPATH=src python scripts/finetune_task_b_hier.py \
+#     --config configs/finetune_b_hier_smoke.yaml --smoke
+
+seed: 20260721
+
+data:
+  pack_dir: data/processed/task_b_pack_chunked
+  chunk_len: 512
+
+model:
+  d_model: 320
+  n_layers: 6
+  n_heads: 8
+  d_ff: 1280
+  dropout: 0.1
+  max_positions: 512
+  n_claim_types: 4
+  n_ages: 112
+  n_months: 37
+
+modes:
+  full:    { head_lr: 1.0e-3, encoder_lr: 3.0e-5 }
+  scratch: { head_lr: 1.0e-3, encoder_lr: 3.0e-4 }
+  probe:   { head_lr: 1.0e-3, encoder_lr: 0.0 }
+
+pooling:
+  kind: gated
+  d_att: 128
+  k_train: 8                  # 8 x 512 = 4096 = tokens_per_batch (boundary OK)
+
+labels: [label]
+
+label_efficiency:
+  fracs: [0.10, 0.25]
+  seeds: 3
+
+train:
+  tokens_per_batch: 4096
+  max_epochs: 2
+  max_steps: 30
+  patience: 2
+  head_dropout: 0.1
+  grad_clip: 1.0
+  log_every_steps: 10
+
+checkpoint: data/checkpoints/pretrain/best.pt
+out_dir: data/finetune/task_b_hier_smoke

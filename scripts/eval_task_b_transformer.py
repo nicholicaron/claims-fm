@@ -32,7 +32,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/finetune_b.yaml")
     parser.add_argument("--baselines-config", default="configs/baselines.yaml")
+    parser.add_argument("--report-suffix", default="",
+                        help="appended to report/metrics/figure filenames "
+                             "(e.g. _hier); default output is unchanged")
     args = parser.parse_args()
+    suffix = args.report_suffix
 
     cfg = load_config(args.config)
     bl = load_config(args.baselines_config)
@@ -61,8 +65,12 @@ def main() -> None:
     # raw probabilities throughout: the frozen M2 Task B protocol is
     # uncalibrated (ranking metrics; SPEC puts recalibration under Task A),
     # and small-val isotonic introduces ranking ties that distort AUPRC
+    model_runs = [("full_1.0", "Pretrained, full fine-tune"), ("scratch_1.0", "From scratch")]
+    if (ft_dir / "probe_1.0_test.parquet").exists():  # hier runs add a probe arm
+        model_runs.append(("probe_1.0", "Probe (frozen encoder)"))
+
     results: dict = {"models": {}}
-    for run, title in (("full_1.0", "Pretrained, full fine-tune"), ("scratch_1.0", "From scratch")):
+    for run, title in model_runs:
         _, p_raw = load_probs(run)
         fns = {"auroc": roc_auc_score, "auprc": average_precision_score}
         for k in ks:
@@ -104,25 +112,45 @@ def main() -> None:
     fig_dir.mkdir(parents=True, exist_ok=True)
     _money_chart(le, le_scratch, xgb_le,
                  hybrid["task_b_label_efficiency_test_auprc"] if hybrid else None,
-                 fig_dir / "task_b_money_chart.png")
+                 fig_dir / f"task_b_money_chart{suffix}.png")
 
     kept_pct = 100 * pack_meta["claims_kept"] / pack_meta["claims_total"]
     prev = y_test.mean()
+    if suffix:
+        design_lines = [
+            "Provider fraud on the Kaggle dataset, same committed provider splits as the",
+            "frozen baselines. Hierarchical encoding (Phase 2): ALL of a provider's",
+            "claims in 512-token claim-aligned chunks, each encoded independently;",
+            "chunk `[CLS]` vectors pooled per provider with gated attention (MIL).",
+            "Selection on val; test scored once, here.",
+            "",
+            f"**No truncation:** {kept_pct:.0f}% of claims retained "
+            f"({pack_meta['n_truncated_providers']:,} providers truncated). The v1.0",
+            "512-token information asymmetry vs the all-claims baselines is gone;",
+            "chunk count still implicitly encodes claim volume (as do the baselines'",
+            "volume features; the scratch arm shares the architecture).",
+            "",
+        ]
+    else:
+        design_lines = [
+            "Provider fraud on the Kaggle dataset, same committed provider splits as the",
+            "frozen baselines. Provider = one sequence of its claims (claim = `[VISIT]`",
+            "span of DX/PX codes) encoded by the DE-SynPUF-pretrained encoder; `[CLS]`",
+            "pooled. Selection/calibration on val; test scored once, here.",
+            "",
+            "**Stated information asymmetry:** sequences truncate keep-most-recent at 512",
+            f"tokens — {pack_meta['n_truncated_providers']:,} high-volume providers truncated; "
+            f"{kept_pct:.0f}% of claims retained overall. The XGBoost baseline sees",
+            "all-claims aggregate features (including volume), so the baseline comparison",
+            "is not information-equal; the pretrained-vs-scratch comparison is (both arms",
+            "share the constraint).",
+            "",
+        ]
     lines = [
-        "# Task B — cross-dataset transfer & label efficiency (M5)",
+        "# Task B — cross-dataset transfer & label efficiency"
+        + (" — hierarchical (Phase 2)" if suffix else " (M5)"),
         "",
-        "Provider fraud on the Kaggle dataset, same committed provider splits as the",
-        "frozen baselines. Provider = one sequence of its claims (claim = `[VISIT]`",
-        "span of DX/PX codes) encoded by the DE-SynPUF-pretrained encoder; `[CLS]`",
-        "pooled. Selection/calibration on val; test scored once, here.",
-        "",
-        "**Stated information asymmetry:** sequences truncate keep-most-recent at 512",
-        f"tokens — {pack_meta['n_truncated_providers']:,} high-volume providers truncated; "
-        f"{kept_pct:.0f}% of claims retained overall. The XGBoost baseline sees",
-        "all-claims aggregate features (including volume), so the baseline comparison",
-        "is not information-equal; the pretrained-vs-scratch comparison is (both arms",
-        "share the constraint).",
-        "",
+        *design_lines,
         f"## Headline comparison (test, prevalence {prev:.1%})",
         "",
         "| Model | AUROC | AUPRC |" + "".join(f" P@{k} |" for k in ks),
@@ -133,7 +161,7 @@ def main() -> None:
         for k in ks:
             row += f" {_ci_str(m['ci'], f'precision_at_{k}', pct=True)} |"
         lines.append(row)
-    for run in ("full_1.0", "scratch_1.0"):
+    for run, _ in model_runs:
         m = results["models"][run]
         row = f"| {m['title']} | {_ci_str(m['ci'], 'auroc')} | {_ci_str(m['ci'], 'auprc')} |"
         for k in ks:
@@ -172,13 +200,13 @@ def main() -> None:
             f"| {_cell(le.get(frac, []))} | {_cell(le_scratch.get(frac, []))} "
             f"| {_cell(hybrid_le.get(frac, []))} |"
         )
-    lines += ["", "![money chart](figures/task_b_money_chart.png)", ""]
+    lines += ["", f"![money chart](figures/task_b_money_chart{suffix}.png)", ""]
 
-    (REPO_ROOT / "reports" / "metrics_task_b_transformer.json").write_text(
+    (REPO_ROOT / "reports" / f"metrics_task_b_transformer{suffix}.json").write_text(
         json.dumps(results, indent=1, default=float)
     )
-    (REPO_ROOT / "reports" / "task_b_transformer.md").write_text("\n".join(lines) + "\n")
-    print("wrote reports/task_b_transformer.md")
+    (REPO_ROOT / "reports" / f"task_b_transformer{suffix}.md").write_text("\n".join(lines) + "\n")
+    print(f"wrote reports/task_b_transformer{suffix}.md")
 
 
 def _money_chart(le: dict, le_scratch: dict, xgb_le: dict, hybrid_le: dict | None, out: Path) -> None:
