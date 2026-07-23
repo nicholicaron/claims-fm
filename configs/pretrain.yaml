@@ -32,9 +32,11 @@ optim:
   grad_clip: 1.0
 
 train:
-  tokens_per_batch: 32768     # length-bucketed; cost = n_seqs * batch_max_len.
-                              # 28k-class logits (+fp32 CE upcast) dominate VRAM:
-                              # ~7.5GB peak at 32k tokens — comfortable on 24GB
+  tokens_per_batch: 16384     # length-bucketed; cost = n_seqs * batch_max_len.
+                              # 28k-class logits dominate VRAM: bf16 logits +
+                              # fp32 CE upcast + softmax backward ≈ 3 full-size
+                              # copies; 32k tokens OOM'd a 24GB 4090 (measured),
+                              # 16k peaks ~11GB with headroom for shape variance
   max_epochs: 12
   early_stop_patience: 3      # evals (one per epoch) without val-loss improvement
   checkpoint_every_steps: 1000
