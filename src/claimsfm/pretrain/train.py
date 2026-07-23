@@ -162,6 +162,7 @@ def train(
     out_dir.mkdir(parents=True, exist_ok=True)
     start_epoch, start_batch, global_step = 0, 0, 0
     best_val, bad_evals = float("inf"), 0
+    tokens_total = 0  # cumulative padded tokens; the prereg's matched-token axis
     if resume:
         # always CPU: load_state_dict moves params/opt state to the live device,
         # and set_rng_state requires a CPU ByteTensor
@@ -171,6 +172,7 @@ def train(
         sched.load_state_dict(state["scheduler"])
         start_epoch, start_batch = state["epoch"], state["batch_idx"]
         global_step, best_val, bad_evals = state["global_step"], state["best_val"], state["bad_evals"]
+        tokens_total = state.get("tokens_total", 0)  # absent in pre-Phase-2 ckpts
         torch.set_rng_state(state["torch_rng"].cpu())
         log.info("resumed from %s at epoch %d batch %d step %d", resume, start_epoch, start_batch, global_step)
 
@@ -182,6 +184,7 @@ def train(
             "model": model.state_dict(), "optimizer": opt.state_dict(),
             "scheduler": sched.state_dict(), "epoch": epoch, "batch_idx": batch_idx,
             "global_step": global_step, "best_val": best_val, "bad_evals": bad_evals,
+            "tokens_total": tokens_total,
             "torch_rng": torch.get_rng_state(), "config": cfg,
             "vocab_counts_hash": pack.meta["vocab_counts_hash"],
         }
@@ -223,7 +226,9 @@ def train(
             opt.step()
             sched.step()
             global_step += 1
-            tokens_seen += int(batch["input_ids"].numel())
+            n_tok = int(batch["input_ids"].numel())
+            tokens_seen += n_tok
+            tokens_total += n_tok
 
             max_steps = cfg["train"].get("max_steps")
             if max_steps and global_step >= max_steps:
@@ -241,6 +246,7 @@ def train(
                     "step": global_step, "epoch": epoch, "loss": round(loss.item(), 4),
                     "masked_acc": round(acc, 4), "lr": sched.get_last_lr()[0],
                     "tokens_per_s": round(tokens_seen / max(dt_s, 1e-6)),
+                    "tokens_seen": tokens_total,
                 })
                 t0, tokens_seen = time.time(), 0
             if global_step % cfg["train"]["checkpoint_every_steps"] == 0:
@@ -248,7 +254,8 @@ def train(
 
         start_batch = 0
         val = evaluate(model, pack, val_batches, cfg, device, lut)
-        logger.log({"step": global_step, "epoch": epoch, **{k2: round(v, 4) for k2, v in val.items()}})
+        logger.log({"step": global_step, "epoch": epoch, "tokens_seen": tokens_total,
+                    **{k2: round(v, 4) for k2, v in val.items()}})
         if val["val_loss"] < best_val:
             best_val, bad_evals = val["val_loss"], 0
             checkpoint(epoch + 1, 0, tag="best")

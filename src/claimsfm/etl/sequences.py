@@ -153,25 +153,37 @@ def build_sequences(
             outputs.append(out_path)
             continue
 
-        frames = []
+        # per-sample sequence caches, then a lazy concat -> sink: peak RAM is
+        # one sample's frame, not the whole role's (18 samples would not fit
+        # the 8GB build machine). Caches also make the 18-sample build
+        # resumable per sample.
+        seq_cache = data_path(cfg, "interim") / f"sequences{suffix}"
+        seq_cache.mkdir(parents=True, exist_ok=True)
+        cache_paths = []
         for sample in samples:
             sample_dir = interim_root / f"sample_{int(sample):02d}"
             events_path = events_root / f"sample_{int(sample):02d}.parquet"
             if not events_path.exists():
                 sample_events(sample_dir).sink_parquet(events_path, compression="zstd")
-            ev = pl.scan_parquet(events_path)
-            if window:
-                ev = ev.filter(
-                    pl.col("event_date").dt.year().is_between(window[0], window[1])
+            seq_path = seq_cache / f"sample_{int(sample):02d}.parquet"
+            if not seq_path.exists():
+                ev = pl.scan_parquet(events_path)
+                if window:
+                    ev = ev.filter(
+                        pl.col("event_date").dt.year().is_between(window[0], window[1])
+                    )
+                seq = assemble_sequences(ev, _demographics(sample_dir)).with_columns(
+                    pl.lit(int(sample), dtype=pl.Int32).alias("sample_id"),
+                    pl.lit(role).alias("role"),
                 )
-            seq = assemble_sequences(ev, _demographics(sample_dir)).with_columns(
-                pl.lit(int(sample), dtype=pl.Int32).alias("sample_id"),
-                pl.lit(role).alias("role"),
-            )
-            frames.append(seq)
-            log.info("sample %s (%s%s): %d members", sample, role, suffix, len(seq))
+                seq.write_parquet(seq_path, compression="zstd")
+                log.info("sample %s (%s%s): %d members", sample, role, suffix, len(seq))
+                del seq
+            cache_paths.append(seq_path)
 
-        pl.concat(frames).write_parquet(out_path, compression="zstd")
+        pl.concat([pl.scan_parquet(p) for p in cache_paths]).sink_parquet(
+            out_path, compression="zstd"
+        )
         outputs.append(out_path)
         log.info("wrote %s", out_path)
     return outputs

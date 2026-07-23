@@ -17,6 +17,7 @@ import datetime as dt
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
@@ -33,51 +34,63 @@ STUDY_START = dt.date(2008, 1, 1)
 ARRAYS = ["input_ids", "claim_type_ids", "age_years", "month_idx", "visit_ids"]
 
 
-def pack_frame(df: pl.DataFrame, tok2id: dict[str, int], out_dir: Path, max_len: int) -> dict:
-    """Encode a sequences frame (tokens/dates/claim_types/visit_ids/birth_year
-    columns) into the packed array files. Members with no events pack as a
-    lone [CLS] — real cohort members with empty observation history."""
-    cols = {name: [] for name in ARRAYS}
-    offsets = [0]
+_DTYPES = {"input_ids": np.uint16, "claim_type_ids": np.uint8, "age_years": np.uint8,
+           "month_idx": np.uint8, "visit_ids": np.uint16}
 
-    for row in df.iter_rows(named=True):
-        ids = [CLS_ID]
-        ctypes = [0]
-        ages = [0]
-        months = [0]
-        visits = [0]
-        prev_visit = None
-        birth_year = row["birth_year"] or 1935
-        for tok, date, ctype, visit in zip(
-            row["tokens"] or [], row["dates"] or [], row["claim_types"] or [], row["visit_ids"] or []
-        ):
-            age = min(max(date.year - birth_year, 0), 110)
-            month = max(0, (date.year - STUDY_START.year) * 12 + date.month - 1)
-            if prev_visit is not None and visit != prev_visit:
-                ids.append(VISIT_ID)
-                ctypes.append(0)
-                ages.append(age)
-                months.append(month)
-                visits.append(visit)
-            ids.append(tok2id.get(tok, UNK_ID))
-            ctypes.append(CLAIM_TYPE_IDS[ctype])
+
+def _encode_member(row: dict, tok2id: dict[str, int], max_len: int) -> dict[str, np.ndarray]:
+    """One member's sequences-row -> packed arrays. Members with no events pack
+    as a lone [CLS] — real cohort members with empty observation history."""
+    ids = [CLS_ID]
+    ctypes = [0]
+    ages = [0]
+    months = [0]
+    visits = [0]
+    prev_visit = None
+    birth_year = row["birth_year"] or 1935
+    for tok, date, ctype, visit in zip(
+        row["tokens"] or [], row["dates"] or [], row["claim_types"] or [], row["visit_ids"] or []
+    ):
+        age = min(max(date.year - birth_year, 0), 110)
+        month = max(0, (date.year - STUDY_START.year) * 12 + date.month - 1)
+        if prev_visit is not None and visit != prev_visit:
+            ids.append(VISIT_ID)
+            ctypes.append(0)
             ages.append(age)
             months.append(month)
             visits.append(visit)
-            prev_visit = visit
-        if len(ids) > max_len:  # keep most recent history, [CLS] anchor stays
-            ids = [ids[0]] + ids[-(max_len - 1):]
-            ctypes = [ctypes[0]] + ctypes[-(max_len - 1):]
-            ages = [ages[0]] + ages[-(max_len - 1):]
-            months = [months[0]] + months[-(max_len - 1):]
-            visits = [visits[0]] + visits[-(max_len - 1):]
+        ids.append(tok2id.get(tok, UNK_ID))
+        ctypes.append(CLAIM_TYPE_IDS[ctype])
+        ages.append(age)
+        months.append(month)
+        visits.append(visit)
+        prev_visit = visit
+    if len(ids) > max_len:  # keep most recent history, [CLS] anchor stays
+        ids = [ids[0]] + ids[-(max_len - 1):]
+        ctypes = [ctypes[0]] + ctypes[-(max_len - 1):]
+        ages = [ages[0]] + ages[-(max_len - 1):]
+        months = [months[0]] + months[-(max_len - 1):]
+        visits = [visits[0]] + visits[-(max_len - 1):]
+    return {
+        "input_ids": np.asarray(ids, dtype=np.uint16),
+        "claim_type_ids": np.asarray(ctypes, dtype=np.uint8),
+        "age_years": np.asarray(ages, dtype=np.uint8),
+        "month_idx": np.asarray(months, dtype=np.uint8),
+        "visit_ids": np.asarray(visits, dtype=np.uint16),
+    }
 
-        cols["input_ids"].append(np.asarray(ids, dtype=np.uint16))
-        cols["claim_type_ids"].append(np.asarray(ctypes, dtype=np.uint8))
-        cols["age_years"].append(np.asarray(ages, dtype=np.uint8))
-        cols["month_idx"].append(np.asarray(months, dtype=np.uint8))
-        cols["visit_ids"].append(np.asarray(visits, dtype=np.uint16))
-        offsets.append(offsets[-1] + len(ids))
+
+def pack_frame(df: pl.DataFrame, tok2id: dict[str, int], out_dir: Path, max_len: int) -> dict:
+    """Encode a sequences frame into the packed array files (in-memory path;
+    fine for smoke packs — the corpus-scale path is pretokenize's two-pass
+    memmap build)."""
+    cols = {name: [] for name in ARRAYS}
+    offsets = [0]
+    for row in df.iter_rows(named=True):
+        arrs = _encode_member(row, tok2id, max_len)
+        for name in ARRAYS:
+            cols[name].append(arrs[name])
+        offsets.append(offsets[-1] + len(arrs["input_ids"]))
 
     out_dir.mkdir(parents=True, exist_ok=True)
     for name in ARRAYS:
@@ -94,36 +107,119 @@ def pretokenize(
     val_frac: float,
     seed: int,
     limit_members: int | None = None,
+    slice_size: int = 100_000,
 ) -> dict:
-    """sequences parquet + vocab -> packed arrays with a hash-based val split."""
+    """sequences parquet + vocab -> packed arrays with a hash-based val split.
+
+    Two-pass memmap build so corpus size is bounded by `slice_size` members in
+    RAM, not the whole parquet (the 18-sample corpus would not fit the 8GB
+    build machine): pass 1 computes exact packed lengths from the count
+    columns (1 + n_events + (n_visits-1), capped at max_len — asserted against
+    the encoder per member in pass 2); pass 2 writes members slice by slice
+    into preallocated .npy memmaps.
+    """
     with open(vocab_path) as f:
         vocab = json.load(f)
     tok2id = vocab["tokens"]
 
-    df = pl.read_parquet(sequences_path)
+    lf = pl.scan_parquet(sequences_path)
     if limit_members:
-        df = df.head(limit_members)
+        lf = lf.head(limit_members)
 
-    stats = pack_frame(df, tok2id, out_dir, max_len)
+    head = lf.select(
+        "DESYNPUF_ID", "sample_id",
+        pl.min_horizontal(
+            1 + pl.col("n_events").cast(pl.Int64)
+            + (pl.col("n_visits").cast(pl.Int64) - 1).clip(0),
+            max_len,
+        ).alias("packed_len"),
+    ).collect(engine="streaming")
+    n_members = head.height
+    lens = head["packed_len"].to_numpy().astype(np.int64)
+    offsets = np.zeros(n_members + 1, dtype=np.uint64)
+    offsets[1:] = np.cumsum(lens)
+    total = int(offsets[-1])
+    source_samples = sorted(head["sample_id"].unique().to_list())
+
+    # frozen-pack guard: a pack dir is a corpus artifact; refuse to silently
+    # rebuild it from a different corpus (e.g. the 5-sample pretrain_pack
+    # after data.yaml grew to samples 3-20)
+    meta_path = out_dir / "meta.json"
+    if meta_path.exists() and os.environ.get("CLAIMSFM_FORCE_REPACK") != "1":
+        old = json.loads(meta_path.read_text())
+        old_src = old.get("source_samples")
+        differs = (old_src is not None and old_src != source_samples) or (
+            old_src is None and old.get("n_members") != n_members
+        )
+        if differs:
+            raise RuntimeError(
+                f"{out_dir} holds a pack from samples {old_src or 'unknown'} "
+                f"({old.get('n_members')} members); refusing to overwrite with samples "
+                f"{source_samples} ({n_members} members). Point pack_dir elsewhere, or set "
+                "CLAIMSFM_FORCE_REPACK=1 if this is intentional."
+            )
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    mm = {
+        name: np.lib.format.open_memmap(
+            out_dir / f"{name}.npy", mode="w+", dtype=dtype, shape=(total,)
+        )
+        for name, dtype in _DTYPES.items()
+    }
+    row_lo = 0
+    while row_lo < n_members:
+        df = lf.slice(row_lo, slice_size).collect()
+        for local, row in enumerate(df.iter_rows(named=True)):
+            i = row_lo + local
+            arrs = _encode_member(row, tok2id, max_len)
+            lo, hi = int(offsets[i]), int(offsets[i + 1])
+            if hi - lo != len(arrs["input_ids"]):
+                raise RuntimeError(
+                    f"member {i}: pass-1 length {hi - lo} != encoded {len(arrs['input_ids'])}"
+                )
+            for name in ARRAYS:
+                mm[name][lo:hi] = arrs[name]
+        row_lo += df.height
+        log.info("pretokenize: %d / %d members", row_lo, n_members)
+        if df.height == 0:
+            raise RuntimeError("empty slice before reaching n_members")
+    for a in mm.values():
+        a.flush()
+    np.save(out_dir / "offsets.npy", offsets)
 
     salt = str(seed).encode()
-    splits = [
-        1 if hashlib.sha256(salt + mid.encode()).digest()[0] / 255 < val_frac else 0
-        for mid in df["DESYNPUF_ID"]
-    ]
-    np.save(out_dir / "split.npy", np.asarray(splits, dtype=np.uint8))
+    splits = np.fromiter(
+        (
+            1 if hashlib.sha256(salt + mid.encode()).digest()[0] / 255 < val_frac else 0
+            for mid in head["DESYNPUF_ID"]
+        ),
+        dtype=np.uint8,
+        count=n_members,
+    )
+    np.save(out_dir / "split.npy", splits)
+
+    ids_arr = mm["input_ids"]
+    n_unk = int((ids_arr == UNK_ID).sum())
+    n_code = int((ids_arr >= N_SPECIALS).sum())
 
     meta = {
-        **stats,
-        "n_val_members": int(sum(splits)),
+        "n_members": n_members,
+        "n_positions": total,
+        "max_len": max_len,
+        "n_val_members": int(splits.sum()),
         "val_frac": val_frac,
         "seed": seed,
         "vocab_size": len(tok2id),
         "vocab_counts_hash": vocab["meta"]["counts_hash"],
         "source": str(sequences_path),
+        "source_samples": source_samples,
+        "unk_rate": round(n_unk / max(1, n_unk + n_code), 6),
     }
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=1))
-    log.info("pack: %s members, %s positions -> %s", meta["n_members"], meta["n_positions"], out_dir)
+    log.info(
+        "pack: %s members, %s positions, unk %.3f%% -> %s",
+        n_members, total, 100 * meta["unk_rate"], out_dir,
+    )
     return meta
 
 
