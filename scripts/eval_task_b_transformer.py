@@ -65,7 +65,9 @@ def main() -> None:
     # raw probabilities throughout: the frozen M2 Task B protocol is
     # uncalibrated (ranking metrics; SPEC puts recalibration under Task A),
     # and small-val isotonic introduces ranking ties that distort AUPRC
-    model_runs = [("full_1.0", "Pretrained, full fine-tune"), ("scratch_1.0", "From scratch")]
+    model_runs = [("full_1.0", "Pretrained, full fine-tune")]
+    if (ft_dir / "scratch_1.0_test.parquet").exists():  # per-cell runs are pretrained-only
+        model_runs.append(("scratch_1.0", "From scratch"))
     if (ft_dir / "probe_1.0_test.parquet").exists():  # hier runs add a probe arm
         model_runs.append(("probe_1.0", "Probe (frozen encoder)"))
 
@@ -100,7 +102,8 @@ def main() -> None:
         return curve
 
     le = le_curve("full", "full_1.0")
-    le_scratch = le_curve("scratch", "scratch_1.0")
+    le_scratch = (le_curve("scratch", "scratch_1.0")
+                  if (ft_dir / "scratch_1.0_test.parquet").exists() else {})
     results["label_efficiency_test_auprc"] = le
     results["label_efficiency_scratch_test_auprc"] = le_scratch
 
@@ -213,10 +216,9 @@ def _money_chart(le: dict, le_scratch: dict, xgb_le: dict, hybrid_le: dict | Non
     fig, ax = plt.subplots(figsize=(7, 4.5))
     keys = ("0.1", "0.25", "1.0")
     x = [10, 25, 100]
-    series_list = [
-        (le, "tab:orange", "o-", "Pretrained transformer"),
-        (le_scratch, "tab:blue", "D--", "Transformer from scratch"),
-    ]
+    series_list = [(le, "tab:orange", "o-", "Pretrained transformer")]
+    if le_scratch:
+        series_list.append((le_scratch, "tab:blue", "D--", "Transformer from scratch"))
     if hybrid_le:
         series_list.append((hybrid_le, "tab:green", "^-.", "Hybrid: XGB + frozen embeddings"))
     for series, color, marker, label in series_list:

@@ -17,12 +17,20 @@ def main() -> None:
     parser.add_argument("--config", default="configs/finetune_b.yaml")
     parser.add_argument("--scratch-le", action="store_true",
                         help="run only the from-scratch label-efficiency arm (ablation 2 control)")
+    parser.add_argument("--pretrained-only", action="store_true",
+                        help="full_1.0 + pretrained LE grid only (Phase 2 cell "
+                             "evals: scratch is unregistered for scaled cells)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config(args.config)
 
-    if args.scratch_le:
+    if args.pretrained_only:
+        runs = [("full", 1.0, 0, "full_1.0")]
+        for frac in cfg["label_efficiency"]["fracs"]:
+            for s in range(cfg["label_efficiency"]["seeds"]):
+                runs.append(("full", frac, s, f"full_{frac}_s{s}"))
+    elif args.scratch_le:
         runs = []
         for frac in cfg["label_efficiency"]["fracs"]:
             for s in range(cfg["label_efficiency"]["seeds"]):

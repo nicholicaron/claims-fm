@@ -48,7 +48,15 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/finetune_a.yaml")
     parser.add_argument("--baselines-config", default="configs/baselines.yaml")
+    parser.add_argument("--modes", default=None,
+                        help="comma-separated subset of probe,full,scratch "
+                             "(default: all — unchanged v1.0 behavior)")
+    parser.add_argument("--report-suffix", default="",
+                        help="appended to report/metrics/figure filenames "
+                             "(e.g. _17m18s); default output unchanged")
     args = parser.parse_args()
+    modes = args.modes.split(",") if args.modes else MODES
+    suffix = args.report_suffix
 
     cfg = load_config(args.config)
     bl = load_config(args.baselines_config)
@@ -64,7 +72,7 @@ def main() -> None:
     fig_dir.mkdir(parents=True, exist_ok=True)
     results: dict = {}
     lines = [
-        "# Task A — transformer vs baselines (M4)",
+        "# Task A — transformer vs baselines" + (f" ({suffix.lstrip('_')})" if suffix else " (M4)"),
         "",
         "Same cohort, same committed splits, same observation-window inputs as the",
         "frozen baselines (tag `v0.2-baselines`). Selection and calibration on val;",
@@ -81,7 +89,7 @@ def main() -> None:
         prev = y_test.mean()
         entry: dict = {"models": {}}
 
-        for mode in MODES:
+        for mode in modes:
             pv = pl.read_parquet(ft_dir / f"{mode}_{label}_val.parquet").sort("DESYNPUF_ID")
             pt = pl.read_parquet(ft_dir / f"{mode}_{label}_test.parquet").sort("DESYNPUF_ID")
             assert pv["DESYNPUF_ID"].to_list() == sub_val["DESYNPUF_ID"].to_list()
@@ -106,7 +114,7 @@ def main() -> None:
                 "p_cal": p_cal,  # dropped before json dump
             }
 
-        best_mode = max(MODES, key=lambda m: entry["models"][m]["val_auprc"])
+        best_mode = max(modes, key=lambda m: entry["models"][m]["val_auprc"])
         entry["best_mode_by_val"] = best_mode
         best = entry["models"][best_mode]
 
@@ -145,7 +153,7 @@ def main() -> None:
             for c in caps:
                 row += f" {_ci_str(m['ci'], f'capture_at_{int(c*100)}pct', pct=True)} |"
             lines.append(row)
-        for mode in MODES:
+        for mode in modes:
             m = entry["models"][mode]
             marker = " **←**" if mode == best_mode else ""
             row = (
@@ -156,14 +164,17 @@ def main() -> None:
                 row += f" {_ci_str(m['ci'], f'capture_at_{int(c*100)}pct', pct=True)} |"
             lines.append(row)
 
-        full_ap = entry["models"]["full"]["ci"]["auprc"]["point"]
-        scratch_ap = entry["models"]["scratch"]["ci"]["auprc"]["point"]
         xgb_auroc = xgb["ci"]["auroc"]["point"]
         best_auroc = best["ci"]["auroc"]["point"]
+        lines += [""]
+        if "full" in modes and "scratch" in modes:
+            full_ap = entry["models"]["full"]["ci"]["auprc"]["point"]
+            scratch_ap = entry["models"]["scratch"]["ci"]["auprc"]["point"]
+            lines.append(
+                f"Pretraining transfer: full fine-tune test AUPRC {full_ap:.3f} vs from-scratch "
+                f"{scratch_ap:.3f} ({'+' if full_ap >= scratch_ap else ''}{full_ap - scratch_ap:.3f})."
+            )
         lines += [
-            "",
-            f"Pretraining transfer: full fine-tune test AUPRC {full_ap:.3f} vs from-scratch "
-            f"{scratch_ap:.3f} ({'+' if full_ap >= scratch_ap else ''}{full_ap - scratch_ap:.3f}).",
             f"Best transformer ({MODE_TITLES[best_mode]}) AUROC {best_auroc:.3f} vs XGBoost "
             f"{xgb_auroc:.3f}; calibrated with {best['calibrator']} "
             f"(ECE {best['calibrated']['ece']:.4f}).",
@@ -181,25 +192,25 @@ def main() -> None:
                 f"| {row['mean_predicted']:.1%} | {auroc_s} | {ece_s} |"
             )
 
-        _fig(label, entry, baselines["labels"][label].get("capture_curve_xgb"), fig_dir)
+        _fig(label, entry, baselines["labels"][label].get("capture_curve_xgb"), fig_dir, suffix)
         lines += [
             "",
-            f"![reliability](figures/task_a_tf_{label}_reliability.png)",
-            f"![capture](figures/task_a_tf_{label}_capture.png)",
+            f"![reliability](figures/task_a_tf_{label}_reliability{suffix}.png)",
+            f"![capture](figures/task_a_tf_{label}_capture{suffix}.png)",
             "",
         ]
         for m in entry["models"].values():
             m.pop("p_cal")
         results[label] = entry
 
-    (REPO_ROOT / "reports" / "metrics_task_a_transformer.json").write_text(
+    (REPO_ROOT / "reports" / f"metrics_task_a_transformer{suffix}.json").write_text(
         json.dumps(results, indent=1, default=float)
     )
-    (REPO_ROOT / "reports" / "task_a_transformer.md").write_text("\n".join(lines) + "\n")
-    print("wrote reports/task_a_transformer.md")
+    (REPO_ROOT / "reports" / f"task_a_transformer{suffix}.md").write_text("\n".join(lines) + "\n")
+    print(f"wrote reports/task_a_transformer{suffix}.md")
 
 
-def _fig(label: str, entry: dict, xgb_curve: dict | None, fig_dir: Path) -> None:
+def _fig(label: str, entry: dict, xgb_curve: dict | None, fig_dir: Path, suffix: str = "") -> None:
     best = entry["models"][entry["best_mode_by_val"]]
     fig, axes = plt.subplots(1, 2, figsize=(9, 4), sharey=True)
     for ax, which in zip(axes, ("reliability_raw", "reliability_calibrated")):
@@ -210,7 +221,7 @@ def _fig(label: str, entry: dict, xgb_curve: dict | None, fig_dir: Path) -> None
     axes[0].set_ylabel("fraction positive")
     fig.suptitle(f"Best transformer reliability — {LABEL_TITLES[label]}")
     fig.tight_layout()
-    fig.savefig(fig_dir / f"task_a_tf_{label}_reliability.png", bbox_inches="tight")
+    fig.savefig(fig_dir / f"task_a_tf_{label}_reliability{suffix}.png", bbox_inches="tight")
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -224,7 +235,7 @@ def _fig(label: str, entry: dict, xgb_curve: dict | None, fig_dir: Path) -> None
     ax.set(xlabel="% of members outreached", ylabel="% of true positives captured",
            title=f"Capture — {LABEL_TITLES[label]}")
     ax.legend()
-    fig.savefig(fig_dir / f"task_a_tf_{label}_capture.png", bbox_inches="tight")
+    fig.savefig(fig_dir / f"task_a_tf_{label}_capture{suffix}.png", bbox_inches="tight")
     plt.close(fig)
 
 

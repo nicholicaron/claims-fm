@@ -1,0 +1,36 @@
+# Phase 2 cell 46m18s: Task A full fine-tune only (registered touch; run with
+# --mode full). Hyperparameters held at v1.0 finetune_a.yaml values per the
+# registered policy (reports/scaling_prereg.md).
+
+seed: 20260721
+
+data:
+  pack_dir: data/processed/task_a_pack
+  max_len: 512
+
+model:                        # must match the 46m18s pretrained encoder
+  d_model: 512
+  n_layers: 10
+  n_heads: 8
+  d_ff: 2048
+  dropout: 0.1
+  max_positions: 512
+  n_claim_types: 4
+  n_ages: 112
+  n_months: 37
+
+modes:
+  full:    { head_lr: 1.0e-3, encoder_lr: 3.0e-5 }
+
+labels: [label_ip, label_cost]
+
+train:
+  tokens_per_batch: 16384
+  max_epochs: 5
+  patience: 2
+  head_dropout: 0.1
+  grad_clip: 1.0
+  log_every_steps: 100
+
+checkpoint: data/checkpoints/pretrain_46m_18s/best.pt
+out_dir: data/finetune/task_a_46m18s
