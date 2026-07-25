@@ -117,6 +117,44 @@ subgroup, and for being explicit that calibration parity and equal
 opportunity are different targets that can't generally both be satisfied;
 which one governs is a policy decision, not a modeling one.
 
+## Phase 2: does scale fix it? (pre-registered)
+
+The natural objection to everything above is "your transformer was too small
+and your corpus too thin." So we tested it, and pre-registered the test
+([scaling_prereg.md](scaling_prereg.md), committed publicly before any
+training): a 2×2 grid — 17M vs 46M parameters, 5 vs 18 DE-SynPUF samples
+(517k → 1.86M members) — plus the one intervention aimed at *real* missing
+information, a hierarchical variant that encodes all of a provider's claims
+in 512-token chunks with gated-attention MIL pooling instead of truncating
+at 512 tokens (v1.0 discarded 52.8% of claims).
+
+Scored against the frozen predictions ([scaling_results.md](scaling_results.md)):
+
+- **The MLM scaling curve is nearly flat.** 3.6× corpus and 2.8× params, in
+  any combination, moved masked accuracy from 15.8% to at most 16.29%.
+- **Task A did not move** — every cell within ±0.007 AUROC of v1.0, as
+  predicted. The synthesis ceiling is now measured across the whole grid.
+- **Scale actively hurt low-label fraud transfer** — the one outcome we
+  didn't predict. At 10% labels, every scaled encoder underperforms the
+  original (0.623 → 0.49–0.58 AUPRC). The 17M/5-sample configuration wasn't
+  a compromise; it was the optimum.
+- **Removing the truncation closed the volume gap — but so did an untrained
+  encoder.** Four model families converge at the same 100%-label ceiling:
+  XGBoost 0.711, hybrid 0.718, hierarchical-full 0.714, and
+  hierarchical-*scratch* 0.714. At full labels the fraud ceiling on this
+  dataset is claim volume plus code statistics, however you reach it.
+  Pretraining's contribution stays where v1.0 found it: label efficiency
+  (hier pretrained 0.631 vs hier scratch 0.414 at 10% labels).
+
+Three of five predictions came back refuted — one on magnitude, one in the
+*opposite* direction we hedged toward, and one (the hierarchical win at the
+original encoder) as a plain miss, with the in-window capstone result scored
+as an observation rather than a confirmation because the frozen prediction
+didn't cover it. That's the point of pre-registering: the misses are
+load-bearing evidence, and what they carry is the same conclusion as v1.0,
+now measured rather than argued — on synthetic claims, the ceiling belongs
+to the data.
+
 ## Limitations, stated plainly
 
 **Synthetic data caps everything.** DE-SynPUF's synthesis weakens
@@ -131,7 +169,10 @@ confirmed-fraud labels would show, which strengthens rather than weakens
 the label-scarcity argument. **Truncation.** Provider sequences cap at 512
 tokens (47% of claims retained), so the transformer never sees volume — an
 information asymmetry versus the baselines, stated in the report; the
-pretrained-vs-scratch comparison shares the constraint and stands.
+pretrained-vs-scratch comparison shares the constraint and stands. *(Phase 2
+removed this limitation with the hierarchical variant — and found the volume
+signal it unlocked is worth ~0.02 AUPRC to any architecture that can see it,
+pretrained or not; see above.)*
 
 ## With real member data, what changes
 

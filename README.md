@@ -5,7 +5,10 @@ A ~17M-parameter BERT-style encoder pretrained on 517k synthetic Medicare
 claims histories (CMS DE-SynPUF, masked-code modeling), fine-tuned for
 member next-year risk and provider fraud detection, benchmarked against
 tuned XGBoost with the metrics a payer actually acts on. Total compute:
-**$1.14** of a $20 budget.
+**$1.14** for v1.0; a pre-registered Phase 2 scaling study
+([prereg](reports/scaling_prereg.md) · [results](reports/scaling_results.md))
+added ~$5.50 of compute (and an honest ledger line for $7.90 of
+idle-instance burn).
 
 ## Headline results (held-out test, single pass, 95% bootstrap CIs in reports)
 
@@ -31,7 +34,7 @@ metric:** the tuned admission model's imbalance weighting wrecked its
 probabilities (ECE 0.32); val-fit isotonic recalibration fixed them
 (ECE 0.005) — payers consume probabilities, so this section exists.
 
-## The four findings
+## The five findings
 
 1. **Tuned XGBoost wins member risk on synthetic data — and we measured why.**
    Not just observed: a hybrid XGBoost given the encoder's embeddings on top
@@ -51,6 +54,16 @@ probabilities (ECE 0.32); val-fit isotonic recalibration fixed them
    encoder (stability) or hybrid (peak precision@k). Member risk on real
    data → rerun the hybrid test first; it's the cheap experiment that says
    whether sequences carry signal your features miss.
+5. **Scale doesn't fix it — measured, pre-registered.** A Phase 2 2×2 grid
+   (17M→46M params × 517k→1.86M members) moved masked accuracy by less than
+   half a point, left member risk exactly where it was, and made *low-label*
+   fraud transfer worse. Removing the 512-token truncation (hierarchical
+   MIL pooling over all claims) closed the fraud gap to 0.714 — but an
+   untrained encoder with the same architecture also hit 0.714: at full
+   labels, four model families converge on the same ~0.71 volume-signal
+   ceiling. Predictions were frozen before training and three of five were
+   refuted; the scorecard is the deliverable
+   ([prereg](reports/scaling_prereg.md) → [results](reports/scaling_results.md)).
 
 Full analysis: [technical writeup](reports/writeup.md) ·
 [Task A report](reports/task_a_transformer.md) ·

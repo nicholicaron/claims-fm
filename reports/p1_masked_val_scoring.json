@@ -1,0 +1,7 @@
+{
+  "protocol": "reports/scaling_prereg.md P1 - val masked top-1 on the v1.0 5-sample pack val split (11,869 members), fixed eval mask stream, seed 20260721",
+  "C0_17m_5s": {"val_masked_acc": 0.158, "val_loss": 6.703, "source": "v1.0 training record"},
+  "C1_17m_18s": {"val_masked_acc": 0.16198, "val_loss": 6.6321, "val_masked_acc_dx": 0.22233, "val_masked_acc_px": 0.29221, "val_masked_acc_rx": 0.10436},
+  "C2_46m_18s": {"val_masked_acc": 0.16294, "val_loss": 6.6313, "val_masked_acc_dx": 0.22485, "val_masked_acc_px": 0.29034, "val_masked_acc_rx": 0.10402},
+  "C3_46m_5s": {"val_masked_acc": 0.1610, "val_loss": 6.6665, "source": "own-pack val == 5s val (trained on 5s pack)"}
+}

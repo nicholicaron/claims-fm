@@ -85,3 +85,23 @@ Config-driven and seeded end-to-end; 43-test suite covers ETL invariants,
 leakage rules, masking, and resume determinism; dataset checksums and
 provenance in `configs/data.lock.yaml` and `DATA.md`; budget ledger in the
 README ($1.14 total). Tags: `v0.2-baselines` → `v1.0`.
+
+## Phase 2 models (2026-07-24, pre-registered scaling study)
+
+Four additional encoders, all sharing the v1.0 masking/optimizer/vocabulary
+(frozen at 28,203 tokens); design and predictions frozen in
+`reports/scaling_prereg.md` before training, outcomes scored in
+`reports/scaling_results.md`:
+
+| Model | Params | Corpus | Config | Checkpoint status |
+|---|---|---|---|---|
+| C1 | 16.7M | samples 3–20 (1.86M members) | `configs/pretrain_17m_18s.yaml` | archived (sha-verified) |
+| C2 | 46.3M (10L×d512×ff2048) | samples 3–20 | `configs/pretrain_46m_18s.yaml` | regenerable (config+seed+frozen pack) |
+| C3 | 46.3M | samples 3–7 (517k members) | `configs/pretrain_46m_5s.yaml` | archived (sha-verified) |
+| Hierarchical Task B head | +~0.2M (gated-attention MIL pooling, d_att 128) | Kaggle fraud, all 558k claims in 512-token chunks | `configs/finetune_b_hier*.yaml` | run metas + probability parquets archived |
+
+Headline: scaling moved masked accuracy ≤ +0.5pp and *hurt* low-label fraud
+transfer; the hierarchical variant removed limitation #4 (truncation) and
+showed the 100%-label fraud ceiling (~0.71 AUPRC) is claim-volume signal
+reachable by any architecture that sees it — pretraining's contribution is
+label efficiency. Limitation #4 above stands for the v1.0 flat models only.
